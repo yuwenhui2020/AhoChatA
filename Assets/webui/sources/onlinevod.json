@@ -1,0 +1,28 @@
+{
+  "Mode": "subs",
+  "Subs": [
+    {
+      "Name": "TVBox 官方 · GitHub",
+      "Url": "https://raw.githubusercontent.com/TVboxorg/TVbox/main/dist/official.json",
+      "Enabled": true
+    },
+    {
+      "Name": "TVBox 官方 · jsDelivr 镜像",
+      "Url": "https://cdn.jsdelivr.net/gh/TVboxorg/TVbox@main/dist/official.json",
+      "Enabled": true
+    },
+    {
+      "Name": "wzh15802 多仓聚合",
+      "Url": "https://gh-proxy.com/https://raw.githubusercontent.com/wzh15802/tvbox/main/tv.json",
+      "Enabled": false
+    }
+  ],
+  "CustomJson": "",
+  "ExtraSites": [],
+  "Disabled": [],
+  "MaxPages": 12,
+  "TimeoutMs": 9000,
+  "MaxSites": 32,
+  "HomeTtlHours": 72,
+  "Rev": 2
+}

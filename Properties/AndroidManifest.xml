@@ -1,0 +1,222 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    android:versionCode="1"
+    android:versionName="1.0"
+    package="com.Ahochat.android">
+
+	<uses-sdk android:minSdkVersion="21" android:targetSdkVersion="33" />
+
+	<!-- 蓝牙权限（沿用 BLEWEBAPP 的 Web Bluetooth 能力） -->
+	<uses-permission android:name="android.permission.BLUETOOTH" />
+	<uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
+	<uses-permission android:name="android.permission.BLUETOOTH_PRIVILEGED" />
+	<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+	<uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+
+	<!-- Android 12+ 权限 -->
+	<uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
+	<uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+	<uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
+
+	<!-- 网络与局域网互联权限 -->
+	<uses-permission android:name="android.permission.INTERNET" />
+	<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+	<uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+	<uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+	<!-- WLAN Direct（Wi-Fi P2P）：发现/连接非同局域网设备。组网会切 Wi-Fi 模式，故需 CHANGE_WIFI_STATE -->
+	<uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+	<uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES" />
+	<uses-permission android:name="android.permission.WAKE_LOCK" />
+
+	<!-- 通知权限（[notice] 消息推送到系统通知栏，Android 13+ 需运行时授权） -->
+	<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+	<!-- 开机自启：开机后自动恢复后台收发（BootReceiver） -->
+	<uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+	<!-- 自启动/保活：申请忽略电池优化（MIUI/国产 ROM 冻结后台会收不到消息） -->
+	<uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
+	<!-- 安装未知来源 APK：用于打开 QQ/微信重命名成 apk.1 的安装包并转接系统安装器 -->
+	<uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
+	<!-- 麦克风权限：语音消息录音 + 原生语音通话 -->
+	<uses-permission android:name="android.permission.RECORD_AUDIO" />
+	<uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+	<uses-permission android:name="android.permission.VIBRATE" />
+
+	<!-- 前台服务：音乐后台播放 + 后台持续接收局域网消息 -->
+	<uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+	<uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+	<uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+	<uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+	<!-- 摄像头共享前台服务用 TypeCamera；Android 14+/targetSdk>=34 起强制要求此权限，补齐避免 StartForeground 被拒 -->
+	<uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+
+	<!-- 短信转发：收到短信后把全文自动发到 Mchat 频道 -->
+	<uses-permission android:name="android.permission.RECEIVE_SMS" />
+	<uses-permission android:name="android.permission.READ_SMS" />
+
+	<!-- IP 摄像头：把本机摄像头硬编码后局域网共享（仅运行时授权，可选硬件） -->
+	<uses-permission android:name="android.permission.CAMERA" />
+	<!-- 悬浮窗权限：浮窗快速预览消息、收发信息与媒体控制（需用户在系统设置手动授予） -->
+	<uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+
+	<!-- 所有文件访问权限：Android 11+ 需此权限才能把共享根目录写到公共存储 /sdcard/Mchat/file。
+	     运行时通过系统设置页申请（与悬浮窗权限同模式），用户授权后自动切换到该根目录。 -->
+	<uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+
+	<!-- Android 11+ 包可见性：允许查询能处理 APK 安装的系统安装器，否则 ACTION_INSTALL_PACKAGE 调不起来 -->
+	<queries>
+		<intent>
+			<action android:name="android.intent.action.INSTALL_PACKAGE" />
+			<data android:mimeType="application/vnd.android.package-archive" />
+		</intent>
+		<intent>
+			<action android:name="android.intent.action.VIEW" />
+			<data android:mimeType="application/vnd.android.package-archive" />
+		</intent>
+	</queries>
+
+	<!-- 媒体读取（选择图片/视频/音乐发送） -->
+	<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+	<uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
+	<uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+	<uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+	<uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+
+	<!-- 蓝牙为可选硬件：无蓝牙设备也应能作为纯聊天端安装使用 -->
+	<uses-feature android:name="android.hardware.bluetooth" android:required="false" />
+	<uses-feature android:name="android.hardware.bluetooth_le" android:required="false" />
+	<!-- WLAN Direct 为可选硬件：不支持 P2P 的设备仍应能作为纯 qaul/LAN 聊天端安装 -->
+	<uses-feature android:name="android.hardware.wifi.direct" android:required="false" />
+	<!-- 摄像头为可选硬件：无摄像头的设备仍可安装并作为查看端使用 -->
+	<uses-feature android:name="android.hardware.camera" android:required="false" />
+	<uses-feature android:name="android.hardware.camera.any" android:required="false" />
+
+	<application
+        android:allowBackup="true"
+        android:icon="@drawable/icon"
+        android:label="@string/app_name"
+        android:requestLegacyExternalStorage="true"
+        android:roundIcon="@drawable/icon"
+        android:supportsRtl="true"
+        android:usesCleartextTraffic="true"
+		android:theme="@style/AppTheme.NoActionBar">
+
+		<!-- 常驻前台服务：保证音乐后台播放不被系统杀掉，并持续接收局域网消息 -->
+		<service
+			android:name="com.ztwl.ChatForegroundService"
+			android:exported="false"
+			android:foregroundServiceType="mediaPlayback|dataSync" />
+
+		<!-- 悬浮窗服务：浮标快速预览/收发消息与媒体控制（需 SYSTEM_ALERT_WINDOW 权限） -->
+		<service
+			android:name="com.ztwl.FloatingWindowService"
+			android:exported="false"
+			android:foregroundServiceType="dataSync" />
+
+		<!-- 音乐前台服务：通知栏/锁屏控制播放（mediaPlayback 类型，Android 10+ 要求显式声明） -->
+		<service
+			android:name="com.Ahochat.android.MusicService"
+			android:exported="false"
+			android:foregroundServiceType="mediaPlayback" />
+
+		<!-- 屏幕画笔叠加层服务：全屏纯色底 + 透明画布 + 底部可拖拽控件栏（需 SYSTEM_ALERT_WINDOW 权限） -->
+		<service
+			android:name="com.ztwl.ScreenDrawService"
+			android:exported="false"
+			android:foregroundServiceType="dataSync" />
+
+		<!-- 允许被远控：安卓被控端。同样必须是 mediaProjection 类型的前台服务，
+		     Android 10+ 才会允许创建 MediaProjection；同时保证被控期间进程不被回收。 -->
+		<service
+			android:name="com.Ahochat.android.RdHostService"
+			android:exported="false"
+			android:foregroundServiceType="mediaProjection" />
+
+		<!-- 屏幕共享：Android 10+ 要求 MediaProjection 只能在 mediaProjection 类型的前台服务中运行 -->
+		<service
+			android:name="com.ztwl.ScreenCastService"
+			android:exported="false"
+			android:foregroundServiceType="mediaProjection" />
+
+		<!-- 摄像头共享：前台服务保活，退出 IP 摄像头界面后共享继续，通知栏可停止 -->
+		<service
+			android:name="com.ztwl.CameraShareService"
+			android:exported="false"
+			android:foregroundServiceType="camera" />
+
+		<!-- 通知监听服务：自动抓取系统通知栏通知，作为聊天消息广播出去。
+		     BIND_NOTIFICATION_LISTENER_SERVICE 为系统保护权限，需用户在
+		     「设置 → 通知 → 通知使用权」中手动为本应用授权。 -->
+		<service
+			android:name="com.ztwl.NotificationRelayService"
+			android:exported="false"
+			android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
+			android:label="聊天通知转发">
+			<intent-filter>
+				<action android:name="android.service.notification.NotificationListenerService" />
+			</intent-filter>
+		</service>
+
+		<!-- 短信转发：系统收到短信时把全文发到 Mchat 频道 -->
+		<receiver
+			android:name="com.ztwl.SmsReceiver"
+			android:enabled="true"
+			android:exported="true">
+			<intent-filter android:priority="999">
+				<action android:name="android.provider.Telephony.SMS_RECEIVED" />
+			</intent-filter>
+		</receiver>
+
+		<!-- 文件分享：将应用私有 media 目录中的文件（图片/文档/安装包等）经 FileProvider
+		     暴露为 content:// URI，交给系统查看器打开。authority 与 Xamarin.Essentials 自带的
+		     com.Ahochat.android.fileProvider 区分开，避免冲突。 -->
+		<provider
+			android:name="androidx.core.content.FileProvider"
+			android:authorities="com.Ahochat.android.fileprovider"
+			android:exported="false"
+			android:grantUriPermissions="true">
+			<meta-data
+				android:name="android.support.FILE_PROVIDER_PATHS"
+				android:resource="@xml/mchat_file_paths" />
+		</provider>
+
+		<!-- 下载接收器：只处理 ACTION_VIEW（打开链接自动入队下载）。
+		     ACTION_SEND 已统一交给 ShareRouterActivity 提供 iOS 风格分发界面。 -->
+		<receiver
+			android:name="com.Ahochat.android.DownloaderReceiver"
+			android:exported="true"
+			android:enabled="true"
+			android:label="AhoChatA 下载接收器">
+			<intent-filter android:priority="100">
+				<action android:name="android.intent.action.VIEW" />
+				<category android:name="android.intent.category.DEFAULT" />
+				<category android:name="android.intent.category.BROWSABLE" />
+				<data android:scheme="http" />
+				<data android:scheme="https" />
+				<data android:mimeType="text/plain" />
+				<data android:mimeType="video/*" />
+				<data android:mimeType="audio/*" />
+				<data android:mimeType="application/*" />
+			</intent-filter>
+			<intent-filter android:priority="100">
+				<action android:name="android.intent.action.VIEW" />
+				<category android:name="android.intent.category.DEFAULT" />
+				<category android:name="android.intent.category.BROWSABLE" />
+				<data android:scheme="mchat" android:host="download" />
+			</intent-filter>
+		</receiver>
+
+		<!-- 下载入口 Activity：透明无 UI，接收分享后自动入队并关闭 -->
+		<activity
+			android:name="com.Ahochat.android.DownloaderEntryActivity"
+			android:theme="@android:style/Theme.Translucent.NoTitleBar"
+			android:exported="true"
+			android:noHistory="true"
+			android:launchMode="singleTop"
+			android:configChanges="orientation|screenSize" />
+
+	</application>
+</manifest>

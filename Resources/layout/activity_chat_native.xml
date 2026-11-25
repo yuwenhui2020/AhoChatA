@@ -1,0 +1,526 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  主界面骨架（v2）：
+    顶栏（返回 / 标题 / 菜单） + 内容区（五个页面叠放，切显示） + 底部四个 Tab。
+  聊天本身是「会话列表 → 点进聊天」两级结构，聊天时隐藏底部 Tab 让输入栏贴底。
+  所有旧 id 全部保留，逻辑层几乎不用改。
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/chatRoot"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="#F2F2F7">
+    <!-- 注意：不要在这里用 fitsSystemWindows="true"。MIUI 手势导航下它会把根布局的可用高度
+         吃掉一大截，LinearLayout 随即把底部 Tab 从 56dp 压到 20 多像素（图标文字都布不出来，
+         Tab 直接失效）。状态栏/手势区改在代码里按 insets 手动补 padding。 -->
+
+    <!-- ========== 顶栏 ========== -->
+    <LinearLayout
+        android:id="@+id/appBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:minHeight="56dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="#ffffff"
+        android:paddingLeft="6dp"
+        android:paddingRight="4dp">
+
+        <FrameLayout
+            android:id="@+id/btnBack"
+            android:contentDescription="返回"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:visibility="gone" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:paddingLeft="8dp">
+
+            <TextView
+                android:id="@+id/txtTitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="AhoChat"
+                android:textColor="#1C1C1E"
+                android:textSize="17sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/txtSubtitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="1dp"
+                android:text="正在启动…"
+                android:textColor="#8E8E93"
+                android:textSize="13sp" />
+        </LinearLayout>
+
+        <!-- 日间 / 夜间一键切换：紧贴菜单按钮左侧（有菜单的地方就有它） -->
+        <FrameLayout
+            android:id="@+id/btnTheme"
+            android:contentDescription="切换日间或夜间外观"
+            android:layout_width="44dp"
+            android:layout_height="44dp" />
+
+        <FrameLayout
+            android:id="@+id/btnMenu"
+            android:contentDescription="更多操作"
+            android:layout_width="44dp"
+            android:layout_height="44dp" />
+    </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="#e6e8ea" />
+
+    <!-- ========== 内容区（页面叠放） ========== -->
+    <FrameLayout
+        android:id="@+id/pageHost"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <!-- ① 会话列表 -->
+        <ScrollView
+            android:id="@+id/pageMessages"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:fillViewport="true"
+            android:scrollbars="none">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingBottom="10dp">
+
+                <LinearLayout
+                    android:id="@+id/convList"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:paddingTop="8dp" />
+            </LinearLayout>
+        </ScrollView>
+
+        <!-- ② 聊天 -->
+        <LinearLayout
+            android:id="@+id/pageChat"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <!-- 频道内设备状态条（只在频道会话显示） -->
+            <LinearLayout
+                android:id="@+id/devBar"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:gravity="center_horizontal"
+                android:background="#14FFFFFF"
+                android:paddingLeft="10dp"
+                android:paddingRight="10dp"
+                android:paddingTop="5dp"
+                android:paddingBottom="5dp"
+                android:visibility="gone">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center"
+                    android:baselineAligned="false">
+
+                    <TextView
+                        android:id="@+id/devSelfName"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:maxWidth="110dp"
+                        android:singleLine="true"
+                        android:ellipsize="end"
+                        android:text="本机"
+                        android:textColor="@color/lc_text"
+                        android:textSize="11sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/devSelfIp"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:minHeight="44dp"
+                        android:gravity="center_vertical"
+                        android:layout_marginStart="6dp"
+                        android:singleLine="true"
+                        android:text="0.0.0.0"
+                        android:textColor="@color/lc_sub"
+                        android:textSize="11sp" />
+
+                    <TextView
+                        android:id="@+id/devSelfBattery"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="6dp"
+                        android:singleLine="true"
+                        android:text="--"
+                        android:textColor="@color/lc_text"
+                        android:textSize="11sp" />
+
+                    <TextView
+                        android:id="@+id/devAskLoc"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:minWidth="44dp"
+                        android:minHeight="44dp"
+                        android:layout_marginStart="10dp"
+                        android:background="@drawable/floating_key_bg"
+                        android:gravity="center"
+                        android:paddingLeft="8dp"
+                        android:paddingRight="8dp"
+                        android:text="定位"
+                        android:textColor="@color/lc_text"
+                        android:textSize="11sp" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/devOthers"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="3dp"
+                    android:orientation="vertical"
+                    android:gravity="center_horizontal" />
+            </LinearLayout>
+
+            <!-- 消息区 -->
+            <ScrollView
+                android:id="@+id/msgScroll"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:fillViewport="true"
+                android:scrollbars="none">
+
+                <LinearLayout
+                    android:id="@+id/msgList"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:paddingLeft="10dp"
+                    android:paddingRight="10dp"
+                    android:paddingTop="8dp"
+                    android:paddingBottom="8dp" />
+            </ScrollView>
+        </LinearLayout>
+
+        <!-- ③ 设备 -->
+        <ScrollView
+            android:id="@+id/pageDevices"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:scrollbars="none"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:id="@+id/devicesBox"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingBottom="16dp" />
+        </ScrollView>
+
+        <!-- ④ 服务 -->
+        <ScrollView
+            android:id="@+id/pageServices"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:scrollbars="none"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:id="@+id/servicesBox"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingBottom="16dp" />
+        </ScrollView>
+
+        <!-- ⑤ 我的 -->
+        <ScrollView
+            android:id="@+id/pageMe"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:scrollbars="none"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:id="@+id/meBox"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingBottom="16dp" />
+        </ScrollView>
+    </FrameLayout>
+
+    <!-- ========== 底部音乐迷你播放条（播放时浮现，横跨四栏、与底部 Tab 同高） ========== -->
+    <LinearLayout
+        android:id="@+id/musicMiniBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:minHeight="56dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="#ffffff"
+        android:paddingStart="12dp"
+        android:paddingEnd="6dp"
+        android:visibility="gone">
+
+        <ImageView
+            android:id="@+id/miniCover"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:scaleType="centerCrop"
+            android:background="@drawable/bg_round8"
+            android:clipToOutline="true" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:layout_marginStart="10dp"
+            android:layout_marginEnd="4dp">
+
+            <TextView
+                android:id="@+id/miniTitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:singleLine="true"
+                android:ellipsize="end"
+                android:textSize="13sp"
+                android:textColor="#FF111111"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/miniLyric0"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:singleLine="true"
+                android:ellipsize="end"
+                android:textSize="10sp"
+                android:textColor="#FF9AA0A6"
+                android:layout_marginTop="1dp" />
+
+            <TextView
+                android:id="@+id/miniLyric1"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:singleLine="true"
+                android:ellipsize="end"
+                android:textSize="10sp"
+                android:textColor="#FF007AFF" />
+
+            <TextView
+                android:id="@+id/miniLyric2"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:singleLine="true"
+                android:ellipsize="end"
+                android:textSize="10sp"
+                android:textColor="#FF8E9099" />
+        </LinearLayout>
+
+        <ImageButton
+            android:id="@+id/miniPrev"
+            android:contentDescription="上一首"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:background="?android:selectableItemBackgroundBorderless"
+            android:src="@android:drawable/ic_media_previous"
+            android:tint="#FF111111"
+            android:scaleType="centerInside" />
+
+        <ImageButton
+            android:id="@+id/miniPlay"
+            android:contentDescription="播放或暂停"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:background="?android:selectableItemBackgroundBorderless"
+            android:src="@android:drawable/ic_media_play"
+            android:tint="#FF111111"
+            android:scaleType="centerInside" />
+
+        <ImageButton
+            android:id="@+id/miniNext"
+            android:contentDescription="下一首"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:background="?android:selectableItemBackgroundBorderless"
+            android:src="@android:drawable/ic_media_next"
+            android:tint="#FF111111"
+            android:scaleType="centerInside" />
+    </LinearLayout>
+
+    <!-- ========== 输入栏（聊天时显示：位于音乐迷你条之下、底部 Tab 之上；非聊天时隐藏） ========== -->
+    <LinearLayout
+        android:id="@+id/inputBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:minHeight="56dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="@color/lc_bar"
+        android:paddingLeft="8dp"
+        android:paddingRight="8dp"
+        android:paddingTop="6dp"
+        android:paddingBottom="8dp"
+        android:visibility="gone">
+
+        <FrameLayout
+            android:id="@+id/btnPlus"
+            android:contentDescription="添加附件"
+            android:layout_width="44dp"
+            android:layout_height="44dp" />
+
+        <EditText
+            android:id="@+id/msgInput"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:minHeight="44dp"
+            android:maxHeight="110dp"
+            android:background="@drawable/input_bg"
+            android:hint="输入消息"
+            android:imeOptions="actionSend"
+            android:inputType="textMultiLine|textCapSentences"
+            android:paddingLeft="14dp"
+            android:paddingRight="14dp"
+            android:paddingTop="8dp"
+            android:paddingBottom="8dp"
+            android:textColor="@color/lc_text"
+            android:textColorHint="#a6a6a6"
+            android:textSize="16sp" />
+
+        <TextView
+            android:id="@+id/btnSend"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:minHeight="44dp"
+            android:layout_marginLeft="8dp"
+            android:background="@drawable/send_bg"
+            android:gravity="center"
+            android:minWidth="62dp"
+            android:paddingLeft="14dp"
+            android:paddingRight="14dp"
+            android:text="发送"
+            android:textColor="#ffffff"
+            android:textSize="14sp" />
+    </LinearLayout>
+
+    <!-- ========== 底部 Tab ========== -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="#e6e8ea" />
+
+    <LinearLayout
+        android:id="@+id/bottomNav"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:background="#ffffff"
+        android:orientation="horizontal">
+
+        <LinearLayout
+            android:id="@+id/navMsg"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:orientation="vertical">
+
+            <FrameLayout
+                android:id="@+id/navMsgIcon"
+                android:layout_width="26dp"
+                android:layout_height="26dp" />
+
+            <TextView
+                android:id="@+id/navMsgLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="消息"
+                android:textColor="#007AFF"
+                android:textSize="10sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/navDevices"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:orientation="vertical">
+
+            <FrameLayout
+                android:id="@+id/navDevicesIcon"
+                android:layout_width="26dp"
+                android:layout_height="26dp" />
+
+            <TextView
+                android:id="@+id/navDevicesLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="设备"
+                android:textColor="#8E8E93"
+                android:textSize="10sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/navServices"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:orientation="vertical">
+
+            <FrameLayout
+                android:id="@+id/navServicesIcon"
+                android:layout_width="26dp"
+                android:layout_height="26dp" />
+
+            <TextView
+                android:id="@+id/navServicesLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="服务"
+                android:textColor="#8E8E93"
+                android:textSize="10sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/navMe"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:orientation="vertical">
+
+            <FrameLayout
+                android:id="@+id/navMeIcon"
+                android:layout_width="26dp"
+                android:layout_height="26dp" />
+
+            <TextView
+                android:id="@+id/navMeLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="我的"
+                android:textColor="#8E8E93"
+                android:textSize="10sp" />
+        </LinearLayout>
+    </LinearLayout>
+</LinearLayout>

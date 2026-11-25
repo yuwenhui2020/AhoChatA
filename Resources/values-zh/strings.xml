@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+	<string name="app_name">AhoChat</string>
+	<string name="action_settings">设置</string>
+	<string name="rd_accessibility_desc">允许局域网内的电脑与手机远程控制本机：模拟点击、滑动与文字输入。仅在你主动开启「允许被控」时需要。</string>
+	<string name="browser_hint">搜索或输入网址</string>
+
+	<!-- 各界面在「最近任务」里显示的名称 -->
+	<string name="act_ack">鸣谢</string>
+	<string name="act_apk_install">安装 APK</string>
+	<string name="act_browser">浏览器</string>
+	<string name="act_call">通话</string>
+	<string name="act_camera_view">实时画面</string>
+	<string name="act_channel">通信渠道设置</string>
+	<string name="act_download">下载</string>
+	<string name="act_gps">位置共享</string>
+	<string name="act_ipcam">IP 摄像头</string>
+	<string name="act_music">影音</string>
+	<string name="act_reader">阅读</string>
+	<string name="act_photo">图片</string>
+	<string name="act_privacy">隐私与安全</string>
+	<string name="act_remotedesk">远程桌面</string>
+	<string name="act_remotehost">允许被远控</string>
+	<string name="act_scan">扫一扫</string>
+	<string name="act_share">分享到 AhoChat</string>
+	<string name="act_shareview">共享观看</string>
+	<string name="act_signal">信号探测</string>
+	<string name="act_userscript">导入油猴脚本</string>
+	<string name="act_video">视频播放</string>
+	<string name="act_vod">影视详情</string>
+</resources>

@@ -1,0 +1,931 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<link rel="icon" href="data:,">
+<title>Mchat · 摄像头直播</title>
+<style>
+  :root { color-scheme: dark; --bar: #14181d; --line: #222831; --sub: #8b95a3; --accent: #31d07a; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; background: #0b0d10; color: #e8eaed;
+    font: 14px/1.5 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+    overscroll-behavior: none; }
+  body { display: flex; flex-direction: column; }
+
+  header { display: flex; align-items: center; gap: 10px; padding: 9px 14px;
+    background: var(--bar); border-bottom: 1px solid var(--line); flex: 0 0 auto; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #6b7280; flex: 0 0 auto;
+    transition: background .25s, box-shadow .25s; }
+  .dot.live { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+  .dot.wait { background: #eab308; box-shadow: 0 0 8px #eab308; }
+  header h1 { font-size: 15px; margin: 0; font-weight: 600; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; }
+  .badge { font-size: 11px; padding: 2px 7px; border-radius: 999px; background: #1d2a3a;
+    color: #7fb4ff; border: 1px solid #2b3d55; white-space: nowrap; flex: 0 0 auto; }
+  .sp { flex: 1; }
+  .stats { font-variant-numeric: tabular-nums; color: var(--sub); font-size: 12px;
+    white-space: nowrap; }
+
+  main { flex: 1; position: relative; overflow: hidden; background: #000; min-height: 0; }
+  #stage { position: absolute; inset: 0; overflow: hidden; }
+  #v, #cv { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    background: #000; object-fit: contain; max-width: none; max-height: none; }
+  #cv { display: none; }
+  #cv.fit, #v.fit { width: 100%; height: 100%; }
+
+  /* 覆盖层：加载中 / 出错 / 待点击播放 */
+  #msg { position: absolute; inset: 0; display: none; flex-direction: column; gap: 12px;
+    align-items: center; justify-content: center; text-align: center; padding: 24px;
+    color: #9aa4b2; white-space: pre-line; font-size: 13px; background: rgba(11,13,16,.72);
+    backdrop-filter: blur(2px); }
+  #msg.show { display: flex; }
+  #msg .big { color: #e8eaed; font-size: 15px; font-weight: 600; }
+  #msg .hint { max-width: 560px; line-height: 1.65; }
+  #msg .row { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+  #msg a.btn, #msg button.btn { font: inherit; font-size: 13px; color: #6cb6ff; cursor: pointer;
+    background: #16202c; border: 1px solid #2b3d55; border-radius: 8px; padding: 8px 14px;
+    text-decoration: none; }
+  #msg a.btn:hover, #msg button.btn:hover { background: #1d2a3a; }
+  .spin { width: 26px; height: 26px; border-radius: 50%; border: 2px solid #2b3d55;
+    border-top-color: #6cb6ff; animation: sp .9s linear infinite; }
+  @keyframes sp { to { transform: rotate(360deg); } }
+
+  /* 悬浮控制条 */
+  #ctl { position: absolute; right: 12px; bottom: 12px; display: flex; gap: 8px;
+    opacity: 0; transition: opacity .25s; z-index: 3; }
+  main:hover #ctl, #ctl.keep { opacity: 1; }
+  #ctl button { width: 38px; height: 38px; border-radius: 11px; border: 1px solid rgba(255,255,255,.14);
+    background: rgba(20,24,29,.78); color: #dfe5ee; cursor: pointer; padding: 0;
+    display: flex; align-items: center; justify-content: center; backdrop-filter: blur(6px); }
+  #ctl button:active { transform: scale(.94); }
+  #ctl svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8;
+    stroke-linecap: round; stroke-linejoin: round; }
+
+  footer { padding: 7px 14px; background: var(--bar); border-top: 1px solid var(--line);
+    font-size: 12px; color: var(--sub); display: flex; flex-wrap: wrap; gap: 12px;
+    align-items: center; flex: 0 0 auto; }
+  footer a { color: #6cb6ff; text-decoration: none; }
+  footer a:hover { text-decoration: underline; }
+  footer .lat.cur { color: #e8eaed; font-weight: 600; }
+  #toast { position: fixed; left: 50%; bottom: 74px; transform: translateX(-50%);
+    background: rgba(20,24,29,.94); border: 1px solid var(--line); color: #e8eaed;
+    padding: 8px 14px; border-radius: 10px; font-size: 13px; opacity: 0;
+    pointer-events: none; transition: opacity .2s; z-index: 9; }
+  #toast.show { opacity: 1; }
+  @media (max-width: 520px) {
+    header h1 { max-width: 42vw; }
+    .badge { display: none; }
+    footer { gap: 8px; }
+    footer .lbl { display: none; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <span class="dot" id="dot"></span>
+  <h1 id="title">摄像头直播</h1>
+  <span class="badge" id="badge" hidden>—</span>
+  <span class="sp"></span>
+  <span class="stats" id="stats">连接中…</span>
+</header>
+
+<main>
+  <div id="stage">
+    <video id="v" muted playsinline autoplay disablepictureinpicture="false"></video>
+    <canvas id="cv"></canvas>
+  </div>
+  <div id="msg"></div>
+  <div id="ctl" class="keep">
+    <button id="bMute" title="声音开关" aria-label="声音开关">
+      <svg viewBox="0 0 24 24"><path d="M11 5 6.5 9H3.5v6h3L11 19z"/><path d="M15.5 9.5a3.5 3.5 0 010 5"/><path id="bMuteX" d="M17 4 7 20" style="display:none"/></svg>
+    </button>
+    <button id="bShot" title="截图" aria-label="截图">
+      <svg viewBox="0 0 24 24"><path d="M4 8.5h3l1.5-2h7L17 8.5h3v10H4z"/><circle cx="12" cy="13" r="3.2"/></svg>
+    </button>
+    <button id="bFull" title="全屏" aria-label="全屏">
+      <svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
+    </button>
+    <button id="bReload" title="重新连接" aria-label="重新连接">
+      <svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 10-2.8 6.1"/><path d="M20.4 5.6v6h-6"/></svg>
+    </button>
+  </div>
+</main>
+
+<footer>
+  <span class="lbl">播放器直连：</span>
+  <a id="lnkTs" href="#" target="_blank" rel="noopener">MPEG-TS</a>
+  <a id="lnkRaw" href="#" target="_blank" rel="noopener">裸 H.264</a>
+  <a id="lnkInfo" href="#" target="_blank" rel="noopener">/info</a>
+  <span class="sp"></span>
+  <a class="lat" id="lnkLow" href="?lat=low" title="缓冲 0.5 秒，最接近实时，网络差时可能卡">低延迟</a>
+  <a class="lat" id="lnkMid" href="?lat=mid" title="默认：约 1 秒延迟">标准</a>
+  <a class="lat" id="lnkHigh" href="?lat=high" title="缓冲 2.6 秒，最流畅">高流畅</a>
+</footer>
+<div id="toast"></div>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ============ 基址 ============
+     网关把 /cam 当根下发页面（不补斜杠），于是 "info" 这类相对地址会被浏览器
+     解析成 "/info" → 落到内置引擎 6789 → 404 空白页（这就是以前的白屏）。
+     所以所有请求都必须基于真实路径前缀拼绝对地址。 */
+  var BASE = (function () {
+    var p = location.pathname || "/";
+    p = p.replace(/\/index\.html?$/i, "/");     // /cam/index.html → /cam/
+    if (p.charAt(p.length - 1) !== "/") p += "/"; // /cam → /cam/  /player → /player/
+    return p;
+  })();
+  function U(p) { return BASE + p; }
+
+  var v = document.getElementById("v");
+  var cv = document.getElementById("cv");
+  var stage = document.getElementById("stage");
+  var statEl = document.getElementById("stats");
+  var dot = document.getElementById("dot");
+  var msgEl = document.getElementById("msg");
+  var titleEl = document.getElementById("title");
+  var badgeEl = document.getElementById("badge");
+  var toastEl = document.getElementById("toast");
+
+  var Q = location.search || "";
+  var rot = 0, fpsHint = 30, codec = "avc1.42E01E";
+  var ms = null, sb = null, objUrl = null;
+  var alive = true, pumping = false, playing = false;
+
+  /* 目标缓冲深度（秒）。服务端约 0.45~0.5s 一个分片，0.6s 就够稳；
+     太低会长期"饿帧"（只有 5~6fps），太高则延迟大。 */
+  var TARGET = 0.6;
+  var MODE = "auto";   // auto | wc（WebCodecs 逐帧直推）| mse（兼容模式）
+  (function () {
+    var m = /[?&]lat=(\w+)/.exec(Q);
+    if (m) {
+      if (m[1] === "low") TARGET = 0.3;
+      else if (m[1] === "high") TARGET = 1.6;
+      else if (m[1] === "mid") TARGET = 0.6;
+    }
+    var d = /[?&]mode=(\w+)/.exec(Q);
+    if (d && (d[1] === "wc" || d[1] === "mse")) MODE = d[1];
+    var sel = /[?&]lat=(\w+)/.exec(Q) ? (/[?&]lat=(\w+)/.exec(Q))[1] : "mid";
+    var map = { low: "lnkLow", mid: "lnkMid", high: "lnkHigh" };
+    var cur = document.getElementById(map[sel] || "lnkMid");
+    if (cur) cur.className = "lat cur";
+  })();
+
+  var infoCache = null;
+  var wcMode = false;          // 是否走 WebCodecs 低延迟通道
+  var wcDec = null, wcReader = null;
+  var seq = 0, lastIdx = -1, epoch = null;
+  var kbps = 0, frameCount = 0, framesPerSec = 0;
+  var lastT = -1, lastTAt = Date.now();
+  var lastRespAt = Date.now();  // 最近一次服务端正常应答：用于区分「画面静止」与「断线」
+  var rebootCount = 0, lastBootAt = 0;
+  var infoTimer = null, watchdog = null;
+  var fatal = false;            // 致命错误：停止自动重连，等用户手动刷新
+  var muted = true;
+
+  /* ---------------- 小工具 ---------------- */
+  function sleep(t) { return new Promise(function (r) { setTimeout(r, t); }); }
+  function setLive(on) { dot.className = on ? "dot live" : "dot"; }
+  function setWait() { dot.className = "dot wait"; }
+  function toast(t) {
+    toastEl.textContent = t; toastEl.classList.add("show");
+    clearTimeout(toast._t); toast._t = setTimeout(function () { toastEl.classList.remove("show"); }, 1600);
+  }
+
+  /* 统一的提示层：title / hint / 按钮组 */
+  function showMsg(title, hint, buttons, spinner) {
+    msgEl.innerHTML = "";
+    msgEl.className = "show";
+    if (spinner) {
+      var sp = document.createElement("div"); sp.className = "spin"; msgEl.appendChild(sp);
+    }
+    if (title) {
+      var t = document.createElement("div"); t.className = "big"; t.textContent = title; msgEl.appendChild(t);
+    }
+    if (hint) {
+      var h = document.createElement("div"); h.className = "hint"; h.textContent = hint; msgEl.appendChild(h);
+    }
+    if (buttons && buttons.length) {
+      var row = document.createElement("div"); row.className = "row";
+      buttons.forEach(function (b) {
+        var el = document.createElement(b.href ? "a" : "button");
+        el.className = "btn"; el.textContent = b.text;
+        if (b.href) { el.href = b.href; if (b.blank) { el.target = "_blank"; el.rel = "noopener"; } }
+        el.onclick = b.onClick || function () { };
+        if (b.onClick && b.href) el.onclick = function (e) { e.preventDefault(); b.onClick(); };
+        row.appendChild(el);
+      });
+      msgEl.appendChild(row);
+    }
+  }
+  function hideMsg() { msgEl.className = ""; msgEl.innerHTML = ""; }
+
+  /* ---------------- 布局：按手机上报的旋转角度做 CSS 旋转 ---------------- */
+  function layout() {
+    var w = stage.clientWidth || window.innerWidth;
+    var h = stage.clientHeight || (window.innerHeight - 90);
+    if (!w || !h) return;
+    var sideways = (rot === 90 || rot === 270);
+    var el = wcMode ? cv : v;
+    el.style.width = (sideways ? h : w) + "px";
+    el.style.height = (sideways ? w : h) + "px";
+    el.style.transform = "translate(-50%,-50%) rotate(" + rot + "deg)";
+  }
+  window.addEventListener("resize", layout);
+  window.addEventListener("orientationchange", function () { setTimeout(layout, 250); });
+  if (window.ResizeObserver) { try { new ResizeObserver(layout).observe(stage); } catch (e) { } }
+
+  /* ---------------- 元数据 ---------------- */
+  function fetchInfo() {
+    return fetch(U("info"), { cache: "no-store" }).then(function (r) {
+      if (!r.ok) { var e = new Error("info " + r.status); e.status = r.status; throw e; }
+      return r.json();
+    }).catch(function () { return null; });
+  }
+
+  function applyInfo(j) {
+    if (!j || !j.width) return;
+    rot = j.rotation || 0;
+    fpsHint = j.fps || 30;
+    if (j.codec) codec = j.codec;
+    titleEl.textContent = (j.name || "摄像头直播") + " · " + j.width + "×" + j.height;
+    if (j.current) {
+      badgeEl.hidden = false;
+      badgeEl.textContent = j.current.replace("@", " @ ") + (j.adaptive ? " · 自适应" : "");
+    }
+    layout();
+  }
+
+  /* 通知服务端「我这边卡了」，让它降码率/分辨率（帧率不动） */
+  function reportStall() {
+    try { fetch(U("abr?stall=1"), { cache: "no-store" }).catch(function () { }); } catch (e) { }
+  }
+
+  /* ---------------- MSE 小工具 ---------------- */
+  function onceEvent(el, name, ms2) {
+    return new Promise(function (resolve) {
+      var done = false;
+      function h() { if (done) return; done = true; el.removeEventListener(name, h); clearTimeout(tm); resolve(); }
+      var tm = setTimeout(function () { if (done) return; done = true; el.removeEventListener(name, h); resolve(); }, ms2 || 3000);
+      el.addEventListener(name, h);
+    });
+  }
+  function waitReady() {
+    if (!sb || !sb.updating) return Promise.resolve();
+    return onceEvent(sb, "updateend", 3000);
+  }
+  function updateEnd() { return onceEvent(sb, "updateend", 5000); }
+
+  /* 清掉已播过的缓存：MSE 有配额，不清理播久了必然 QuotaExceeded → 掉线 */
+  async function freeSpace(aggressive) {
+    if (!sb) return;
+    await waitReady();
+    if (!sb || sb.updating) return;
+    var b = v.buffered;
+    if (!b.length) return;
+    var start = b.start(0), end = b.end(b.length - 1);
+    var keep = aggressive ? 1.8 : 6.0;
+    var cut = end - keep;
+    if (cut <= start + 0.2) return;
+    try { sb.remove(start, cut); await updateEnd(); } catch (e) { return; }
+    if ((v.currentTime || 0) < cut) {
+      try { v.currentTime = Math.max(cut, end - 0.2); } catch (e) { }
+    }
+  }
+
+  async function appendChunk(u8) {
+    for (var i = 0; i < 10; i++) {
+      if (!alive || !sb) return false;
+      await waitReady();
+      if (!alive || !sb) return false;
+      if (sb.updating) { await sleep(40); continue; }
+      try {
+        sb.appendBuffer(u8);
+        await updateEnd();
+        return true;
+      } catch (e) {
+        var n = e && e.name;
+        if (n === "QuotaExceededError") { await freeSpace(true); continue; }
+        if (n === "InvalidStateError") { await sleep(60); continue; }
+        return false;
+      }
+    }
+    return false;
+  }
+
+  function inBuffered(t) {
+    var b = v.buffered;
+    for (var i = 0; i < b.length; i++) {
+      if (t >= b.start(i) - 0.02 && t <= b.end(i)) return true;
+    }
+    return false;
+  }
+
+  /* 追到直播边缘：只在缓冲过深/时间轴出现空洞时才跳，避免把缓冲越追越薄 */
+  function seekLive() {
+    var b = v.buffered;
+    if (!b.length) return;
+    var s = b.start(0), end = b.end(b.length - 1);
+    var t = v.currentTime || 0;
+    if (t < s - 0.05 || t > end || !inBuffered(t)) {
+      try { v.currentTime = Math.max(s, end - TARGET); } catch (e) { }
+    } else if (end - t > TARGET + 1.6) {
+      try { v.currentTime = end - TARGET; } catch (e) { }
+    }
+  }
+
+  function bufferedRange() {
+    var b = v.buffered;
+    if (!b.length) return null;
+    return { start: b.start(0), end: b.end(b.length - 1) };
+  }
+
+  function teardown() {
+    pumping = false;
+    playing = false;
+    wcMode = false;
+    try { if (wcDec) wcDec.close(); } catch (e) { }
+    wcDec = null;
+    try { if (wcReader && wcReader.cancel) wcReader.cancel(); } catch (e) { }
+    wcReader = null;
+    try { cv.style.display = "none"; v.style.display = ""; } catch (e) { }
+    try { if (sb && sb.abort) sb.abort(); } catch (e) { }
+    sb = null;
+    try { if (ms && ms.readyState === "open") ms.endOfStream(); } catch (e) { }
+    ms = null;
+    try { v.pause(); } catch (e) { }
+    try { v.removeAttribute("src"); v.load(); } catch (e) { }
+    if (objUrl) { try { URL.revokeObjectURL(objUrl); } catch (e) { } objUrl = null; }
+  }
+
+  /* MSE 构造器：iOS 17.1+ 只有 ManagedMediaSource */
+  function mseCtor() { return window.MediaSource || window.ManagedMediaSource || null; }
+
+  function pickMime() {
+    var C = mseCtor();
+    if (!C || typeof C.isTypeSupported !== "function") return null;
+    var list = [
+      'video/mp4; codecs="' + codec + '"',
+      'video/mp4; codecs="avc1.42E01E"',
+      'video/mp4; codecs="avc1.4D401F"',
+      'video/mp4; codecs="avc1.64001F"',
+      'video/mp4'
+    ];
+    for (var i = 0; i < list.length; i++) {
+      try { if (C.isTypeSupported(list[i])) return list[i]; } catch (e) { }
+    }
+    return null;
+  }
+
+  /* 兜底通道：给不支持 MSE / WebCodecs 的浏览器（老 iOS 等）的说明 */
+  function failChannels(detail) {
+    fatal = true;
+    pumping = false;
+    setLive(false);
+    statEl.textContent = "无法播放";
+    showMsg("这个浏览器播不了实时流",
+      (detail ? detail + "\n\n" : "")
+      + "已经试过：WebCodecs 逐帧直推（需 https）→ MSE 分片（需 MediaSource）。\n"
+      + "可以改用 Chrome / Edge / 新版 Safari 打开本页，\n"
+      + "或用 VLC / PotPlayer / ffplay 直接打开下面的 MPEG-TS 链接。",
+      [
+        { text: "MPEG-TS 地址", onClick: function () { openExternal(U("live.ts")); } },
+        { text: "裸 H.264 地址", onClick: function () { openExternal(U("stream.h264")); } },
+        { text: "重新加载", onClick: function () { location.reload(); } }
+      ]);
+  }
+  function openExternal(u) {
+    try { window.open(u, "_blank", "noopener"); } catch (e) { }
+    /* 打开原始流地址给本地播放器接管；浏览器里也能复制地址 */
+    try {
+      var full = new URL(u, location.href).href;
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(full).then(function () { toast("地址已复制：" + full); },
+          function () { toast(full); });
+      } else toast(full);
+    } catch (e) { }
+  }
+
+  /* ---------------- 启动 / 重连 ---------------- */
+  function requestReboot(reason) {
+    if (!alive || fatal) return;
+    pumping = false;
+    rebootCount++;
+    if (rebootCount > 20) {
+      fatal = true;
+      statEl.textContent = "已停止重试";
+      showMsg("连接不稳定，已停止自动重试",
+        "请先确认手机端「共享摄像头/屏幕」仍在运行（App 需留在前台），然后点下面的按钮重试。",
+        [
+          { text: "重新连接", onClick: function () { rebootCount = 0; fatal = false; boot("正在重新连接…"); } },
+          { text: "MPEG-TS 地址", onClick: function () { openExternal(U("live.ts")); } }
+        ]);
+      return;
+    }
+    boot(reason);
+  }
+
+  /* ===================== WebCodecs 低延迟通道 =====================
+     服务端 /frames 逐帧推送 [4B 长度][1B 关键帧][4B 时间戳][AVCC]，
+     浏览器直接 VideoDecoder 解码到 canvas —— 不经过 MSE 分片缓冲，
+     端到端延迟通常 100~200ms。需要安全上下文（https / localhost）。 */
+  function b64d(s) {
+    try {
+      var bin = atob(s);
+      var r = new Uint8Array(bin.length);
+      for (var i = 0; i < bin.length; i++) r[i] = bin.charCodeAt(i);
+      return r;
+    } catch (e) { return null; }
+  }
+
+  function wcWhy() {
+    if (!window.isSecureContext) return "非 https（浏览器只在安全上下文开放 VideoDecoder）";
+    if (!window.VideoDecoder) return "浏览器没有 VideoDecoder";
+    if (!window.EncodedVideoChunk) return "浏览器没有 EncodedVideoChunk";
+    if (!window.ReadableStream) return "浏览器没有 ReadableStream";
+    return "";
+  }
+
+  async function tryWC() {
+    if (MODE === "mse") return false;
+    if (!window.VideoDecoder || !window.EncodedVideoChunk || !window.ReadableStream) return false;
+
+    var resp;
+    try { resp = await fetch(U("frames"), { cache: "no-store" }); }
+    catch (e) { return false; }
+    if (!resp.ok || !resp.body) return false;
+
+    wcReader = resp.body.getReader();
+    var buf = new Uint8Array(0);
+    function cat(a, b) { var r = new Uint8Array(a.length + b.length); r.set(a); r.set(b, a.length); return r; }
+
+    async function readMore() {
+      var r = await wcReader.read();
+      if (r.done) return false;
+      buf = cat(buf, r.value);
+      return true;
+    }
+    async function ensure(n) { while (buf.length < n) { if (!(await readMore())) return false; } return true; }
+    async function readLine() {
+      while (true) {
+        for (var i = 0; i < buf.length; i++) {
+          if (buf[i] === 10) {
+            var line = new TextDecoder().decode(buf.subarray(0, i));
+            buf = buf.slice(i + 1);
+            return line;
+          }
+        }
+        if (!(await readMore())) return null;
+      }
+    }
+
+    var line = null;
+    try { line = await readLine(); } catch (e) { return false; }
+    if (!line) return false;
+
+    var init;
+    try { init = JSON.parse(line); } catch (e) { return false; }
+    var sps = b64d(init.sps), pps = b64d(init.pps);
+    if (!sps || !pps || sps.length < 4) return false;
+
+    // 组装 avcC（VideoDecoder 的 description）
+    var desc = new Uint8Array(11 + sps.length + pps.length);
+    desc[0] = 1; desc[1] = sps[1]; desc[2] = sps[2]; desc[3] = sps[3];
+    desc[4] = 0xff; desc[5] = 0xe1;
+    desc[6] = (sps.length >> 8) & 0xff; desc[7] = sps.length & 0xff;
+    desc.set(sps, 8);
+    var o = 8 + sps.length;
+    desc[o] = 1;
+    desc[o + 1] = (pps.length >> 8) & 0xff;
+    desc[o + 2] = pps.length & 0xff;
+    desc.set(pps, o + 3);
+
+    var ctx = cv.getContext("2d", { alpha: false, desynchronized: true });
+
+    function draw(frame) {
+      try {
+        if (cv.width !== frame.displayWidth || cv.height !== frame.displayHeight) {
+          cv.width = frame.displayWidth || init.w;
+          cv.height = frame.displayHeight || init.h;
+          layout();
+        }
+        ctx.drawImage(frame, 0, 0, cv.width, cv.height);
+      } catch (e) { }
+      try { frame.close(); } catch (e) { }
+      frameCount++;
+      lastRespAt = Date.now();
+      if (!playing) { playing = true; hideMsg(); setLive(true); }
+    }
+
+    try {
+      wcDec = new VideoDecoder({
+        output: draw,
+        error: function () { /* 单帧错误不影响后续 */ }
+      });
+      wcDec.configure({ codec: init.codec || codec, description: desc, optimizeForLatency: true });
+    } catch (e) {
+      try { if (wcDec) wcDec.close(); } catch (e2) { }
+      wcDec = null;
+      return false;
+    }
+
+    wcMode = true;
+    pumping = true;
+    v.style.display = "none";
+    cv.style.display = "block";
+    if (init.w && init.h) { cv.width = init.w; cv.height = init.h; }
+    layout();
+    hideMsg();
+    setWait();
+
+    (async function pumpWC() {
+      var fails = 0;
+      while (alive && wcMode) {
+        try {
+          if (!(await ensure(9))) break;
+          var len = ((buf[0] << 24) | (buf[1] << 16) | (buf[2] << 8) | buf[3]) >>> 0;
+          var key = buf[4] === 1;
+          var pts = ((buf[5] << 24) | (buf[6] << 16) | (buf[7] << 8) | buf[8]) >>> 0;
+          if (len <= 0 || len > 4 * 1024 * 1024) break;
+          if (!(await ensure(9 + len))) break;
+
+          var data = buf.slice(9, 9 + len);
+          buf = buf.slice(9 + len);
+
+          if (wcDec && wcDec.state === "configured") {
+            wcDec.decode(new EncodedVideoChunk({
+              type: key ? "key" : "delta",
+              timestamp: pts * 1000,
+              data: data
+            }));
+          }
+          fails = 0;
+        } catch (e) {
+          if (++fails > 5) break;
+          await sleep(60);
+        }
+      }
+      if (alive && wcMode) requestReboot("画面中断，正在重连…");
+    })();
+
+    return true;
+  }
+
+  async function boot(reason) {
+    if (!alive || fatal) return;
+    if (Date.now() - lastBootAt < 1500) await sleep(1000);
+    lastBootAt = Date.now();
+
+    teardown();
+    setWait();
+    showMsg(reason || "正在连接…", "手机上请确认「共享摄像头 / 屏幕」已开启，且 App 留在前台。", null, true);
+
+    var info = await fetchInfo();
+    if (!alive) return;
+    applyInfo(info);
+    infoCache = info;
+
+    /* 优先：WebCodecs 逐帧直推（低延迟）。成功就直接接管，失败再走 MSE。 */
+    try { if (await tryWC()) return; } catch (e) { }
+
+    var C = mseCtor();
+    if (!C) {
+      failChannels(window.isSecureContext ? "" : "当前是 http 访问，且浏览器不支持 MediaSource。");
+      return;
+    }
+
+    // 先取 init 段（含 SPS/PPS），并以它自带的 X-Epoch 作为这一代的标识
+    var initBuf = null, initEpoch = null, lastStatus = 0;
+    for (var i = 0; i < 40 && alive; i++) {
+      try {
+        var r = await fetch(U("mse/init.mp4"), { cache: "no-store" });
+        if (r.ok) {
+          var ab = await r.arrayBuffer();
+          if (ab.byteLength > 100) {
+            initBuf = ab;
+            var eh = r.headers.get("X-Epoch");
+            initEpoch = (eh === null) ? null : parseInt(eh, 10);
+            break;
+          }
+        } else lastStatus = r.status;
+      } catch (e) { }
+      await sleep(300);
+    }
+    if (!alive) return;
+    if (!initBuf) {
+      fatal = true;
+      statEl.textContent = "未就绪";
+      showMsg(lastStatus === 404 ? "播放接口 404（地址不对）" : "暂时拿不到视频参数",
+        lastStatus === 404
+          ? "请用带斜杠的地址访问：\n" + location.origin + BASE + "\n当前地址：" + location.href
+          : "手机端可能还没吐出第一帧。请确认「共享摄像头 / 屏幕」已开始，App 留在前台，然后点重新连接。",
+        [
+          { text: "重新连接", onClick: function () { fatal = false; rebootCount = 0; boot("正在重新连接…"); } },
+          { text: "MPEG-TS 地址", onClick: function () { openExternal(U("live.ts")); } }
+        ]);
+      return;
+    }
+
+    epoch = initEpoch;
+    seq = 0;
+    lastIdx = -1;
+
+    var mime = pickMime();
+    if (!mime) {
+      failChannels("浏览器不支持 H.264 的 MSE 解码。");
+      return;
+    }
+
+    ms = new C();
+    /* ManagedMediaSource 需要在 video 上关掉远端播放 */
+    try { v.disableRemotePlayback = true; } catch (e) { }
+    objUrl = URL.createObjectURL(ms);
+    /* 监听必须先挂上再设 src：某些浏览器 sourceopen 会在 src 赋值后同步触发 */
+    var opened = new Promise(function (res) {
+      if (ms.readyState === "open") { res(); return; }
+      var done = false;
+      function go() { if (done) return; done = true; res(); }
+      try { ms.addEventListener("sourceopen", go, { once: true }); } catch (e) { done = true; res(); return; }
+      setTimeout(go, 4000);
+    });
+    v.src = objUrl;
+    try { v.load(); } catch (e) { }
+    await opened;
+    if (!alive || !ms) return;
+    if (ms.readyState !== "open") {
+      failChannels("MediaSource 迟迟没有就绪（readyState=" + ms.readyState + "）。");
+      return;
+    }
+
+    var addErr = null;
+    try { sb = ms.addSourceBuffer(mime); } catch (e) { addErr = e; sb = null; }
+    if (!sb) {
+      failChannels("无法创建 MSE 源缓冲" + (addErr ? "：" + (addErr.name || "") + " " + (addErr.message || "") : "")
+        + "\n（尝试的 MIME：" + mime + "）");
+      return;
+    }
+    try { sb.mode = "segments"; } catch (e) { }
+
+    if (!(await appendChunk(new Uint8Array(initBuf)))) {
+      fatal = true;
+      showMsg("初始化片段追加失败", "请刷新页面重试。", [{ text: "刷新", onClick: function () { location.reload(); } }]);
+      return;
+    }
+
+    // 注意：这里绝不能 await play()。只有 init 段时还没数据，play() 的 Promise 要等真正出帧才
+    // resolve，一旦 await 就会把后面的 pump() 永远卡住。起播交给 pump() 攒够缓冲后再触发。
+    playing = false;
+    pumping = true;
+    showMsg("正在缓冲…", "首帧可能需要 1~2 秒。", null, true);
+    pump();
+
+    if (infoTimer) clearInterval(infoTimer);
+    infoTimer = setInterval(async function () {
+      if (!alive) return;
+      var j = await fetchInfo();
+      if (alive && j) applyInfo(j);
+    }, 5000);
+  }
+
+  /* ---------------- 分片拉取循环 ---------------- */
+  async function pump() {
+    var fails = 0, hardFail = 0;
+    while (alive && pumping) {
+      var resp;
+      try {
+        resp = await fetch(U("mse/seg?n=" + seq), { cache: "no-store" });
+      } catch (e) {
+        fails++; setWait();
+        await sleep(Math.min(1500, 250 * fails));
+        continue;
+      }
+      if (!alive || !pumping) return;
+
+      if (!resp.ok) {
+        fails++;
+        if (resp.status === 404 && ++hardFail > 3) { fatal = true; failChannels("分片接口 404（地址不对）。"); return; }
+        setWait();
+        if (fails > 30) { requestReboot("服务端无响应，正在重连…"); return; }
+        await sleep(400);
+        continue;
+      }
+      hardFail = 0;
+
+      // 服务端换了分辨率/码率档位 → 这一代流作废，重新初始化播放器
+      var eh = resp.headers.get("X-Epoch");
+      var ep = (eh === null) ? null : parseInt(eh, 10);
+      if (ep !== null && epoch !== null && ep !== epoch) {
+        try { if (resp.body && resp.body.cancel) resp.body.cancel(); } catch (e) { }
+        requestReboot("画质已自适应调整，重新连接…");
+        return;
+      }
+      if (ep !== null) epoch = ep;
+
+      var idx = parseInt(resp.headers.get("X-Seg-Index") || "-1", 10);
+      var buf = await resp.arrayBuffer();
+      if (!alive || !pumping) return;
+      lastRespAt = Date.now();   // 服务端有应答（哪怕没有新分片）→ 连接是活的
+
+      // 重复段 / 更旧的段：说明画面这段时间没有变化（屏幕共享静止），跳过而不判卡顿
+      if (idx >= 0 && idx <= lastIdx) { await sleep(250); continue; }
+
+      if (buf.byteLength > 0) {
+        kbps = Math.round(buf.byteLength * 8 / 1000);
+        var ok = await appendChunk(new Uint8Array(buf));
+        if (!ok) {
+          fails++;
+          setWait();
+          reportStall();
+          await freeSpace(true);
+          await sleep(150);
+          if (fails > 12) { requestReboot("播放缓冲异常，正在重连…"); return; }
+          continue;
+        }
+      }
+
+      if (idx >= 0) { lastIdx = idx; seq = idx + 1; }
+      fails = 0;
+
+      // ---- 缓冲管理：攒够 TARGET 秒再起播；之后维持在这条线上 ----
+      var br = bufferedRange();
+      if (!playing) {
+        if (br && br.end - br.start >= TARGET) {
+          try { v.currentTime = Math.max(br.start, br.end - TARGET); } catch (e) { }
+          try { v.play().catch(maybeGate); } catch (e) { maybeGate(); }
+          playing = true;
+          hideMsg();
+          lastT = -1;
+          lastTAt = Date.now();
+        }
+      } else {
+        setLive(true);
+        seekLive();
+        if (v.paused) { try { v.play().catch(function () { }); } catch (e) { } }
+      }
+
+      // 每 4 段清一次已播缓存，长期播放也不会撞配额
+      if (lastIdx >= 0 && lastIdx % 4 === 0) await freeSpace(false);
+    }
+  }
+
+  /* 自动播放被浏览器拦下时，给一个大按钮让用户点一下（点完必播）。
+     注意：play() 被「后来的一次 seek / 换源」打断也会 reject，那时画面其实已经在播，
+     所以延迟一下再判断真实的 paused 状态，避免把遮罩盖在正常播出的画面上。 */
+  var gateShown = false;
+  function maybeGate() {
+    setTimeout(function () {
+      if (!alive || wcMode) return;
+      if (!v.paused && v.currentTime > 0) return;
+      showPlayGate();
+    }, 500);
+  }
+  function showPlayGate() {
+    if (!alive || wcMode) return;
+    if (!v.paused) return;
+    gateShown = true;
+    showMsg("已就绪，点一下开始播放", "浏览器拦截了自动播放（无声视频也会被某些省电策略拦）。",
+      [{
+        text: "开始播放", onClick: function () {
+          gateShown = false;
+          hideMsg();
+          try { v.play().catch(function () { }); } catch (e) { }
+        }
+      }]);
+  }
+  v.addEventListener("playing", function () {
+    gateShown = false;
+    if (!wcMode) { hideMsg(); setLive(true); }
+  });
+
+  /* ---------------- 状态栏 ---------------- */
+  setInterval(function () {
+    if (gateShown && !v.paused) { gateShown = false; hideMsg(); }   // 遮罩别盖在正常播出的画面上
+    framesPerSec = frameCount;
+    frameCount = 0;
+    var lat = 0;
+    try {
+      var b = v.buffered;
+      if (b.length) lat = Math.max(0, b.end(b.length - 1) - v.currentTime);
+    } catch (e) { }
+    if (pumping && playing) {
+      // 屏幕共享时画面可能长时间完全静止（没有新帧），这与"卡住"无关，如实标注即可
+      var still = (framesPerSec === 0 && Date.now() - lastRespAt < 12000);
+      if (wcMode) {
+        statEl.textContent = (still ? "画面静止" : framesPerSec + " fps") + " · 直连";
+      } else {
+        statEl.textContent = (still ? "画面静止" : framesPerSec + " fps")
+          + " · " + kbps + " kbps · 缓冲 " + lat.toFixed(1) + "s";
+      }
+      if (framesPerSec >= Math.max(8, fpsHint * 0.5)) rebootCount = 0;  // 已经稳定，重置重连计数
+    } else if (pumping) {
+      statEl.textContent = "缓冲中… " + kbps + " kbps";
+    }
+  }, 1000);
+
+  /* ---------------- 卡顿看门狗：4 秒没有任何进展就重建 ---------------- */
+  watchdog = setInterval(function () {
+    if (!alive || !pumping || fatal) return;
+    if (!playing) {
+      // 一直起不来：20 秒还没出画面就重连一次
+      if (Date.now() - lastBootAt > 20000) requestReboot("首帧超时，正在重连…");
+      return;
+    }
+    if (wcMode) {
+      // WebCodecs 直接按"多久没收到新帧"判断；静止画面同样不算断线
+      if (Date.now() - lastRespAt > 6000) { reportStall(); requestReboot("画面卡住，正在重连…"); }
+      return;
+    }
+    var t = v.currentTime || 0;
+    if (Math.abs(t - lastT) > 0.02) { lastT = t; lastTAt = Date.now(); return; }
+    if (Date.now() - lastTAt > 4000) {
+      // 服务端近 12 秒内还在正常应答 → 只是画面没有变化（屏幕共享静止），
+      // 不重连（否则会陷入"每 4 秒重建一次"的死循环），只把计时往后推。
+      if (Date.now() - lastRespAt < 12000) { lastTAt = Date.now(); return; }
+      lastTAt = Date.now();
+      reportStall();
+      requestReboot("画面卡住，正在重连…");
+    }
+  }, 1000);
+
+  if (v.requestVideoFrameCallback) {
+    var onFrame = function () { frameCount++; v.requestVideoFrameCallback(onFrame); };
+    v.requestVideoFrameCallback(onFrame);
+  }
+
+  /* ---------------- 悬浮按钮 ---------------- */
+  document.getElementById("bMute").addEventListener("click", function () {
+    muted = !muted;
+    v.muted = muted;
+    document.getElementById("bMuteX").style.display = muted ? "none" : "";
+    toast(muted ? "已静音" : "已开启声音");
+  });
+  document.getElementById("bShot").addEventListener("click", function () {
+    try {
+      var c = document.createElement("canvas");
+      if (wcMode && cv.width) {
+        c.width = cv.width; c.height = cv.height;
+        c.getContext("2d").drawImage(cv, 0, 0);
+      } else {
+        c.width = v.videoWidth; c.height = v.videoHeight;
+        if (!c.width) { toast("还没有画面"); return; }
+        c.getContext("2d").drawImage(v, 0, 0, c.width, c.height);
+      }
+      var a = document.createElement("a");
+      a.download = "cam-" + new Date().toISOString().replace(/[:.]/g, "-") + ".png";
+      a.href = c.toDataURL("image/png");
+      a.click();
+      toast("已保存截图");
+    } catch (e) { toast("截图失败：" + (e && e.message ? e.message : e)); }
+  });
+  document.getElementById("bFull").addEventListener("click", function () {
+    var el = document.getElementById("stage");
+    try {
+      if (document.fullscreenElement || document.webkitFullscreenElement) {
+        (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+      } else if (el.requestFullscreen) el.requestFullscreen();
+      else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+      else if (v.webkitEnterFullscreen) v.webkitEnterFullscreen();   // iOS
+      else toast("当前浏览器不支持全屏");
+    } catch (e) { }
+  });
+  function doReload() {
+    rebootCount = 0; fatal = false;
+    boot("正在重新连接…");
+  }
+  document.getElementById("bReload").addEventListener("click", doReload);
+  document.addEventListener("fullscreenchange", function () { setTimeout(layout, 120); });
+
+  /* 双击画面全屏 / 单击显示提示 */
+  stage.addEventListener("dblclick", function () { document.getElementById("bFull").click(); });
+  /* 移动端：轻触让控制条常显 */
+  stage.addEventListener("touchstart", function () {
+    var c = document.getElementById("ctl");
+    c.classList.add("keep");
+    clearTimeout(c._t);
+    c._t = setTimeout(function () { c.classList.remove("keep"); }, 4000);
+  }, { passive: true });
+
+  /* 键盘快捷键 */
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "f" || e.key === "F") document.getElementById("bFull").click();
+    else if (e.key === "m" || e.key === "M") document.getElementById("bMute").click();
+    else if (e.key === "r" || e.key === "R") doReload();
+    else if (e.key === "s" || e.key === "S") document.getElementById("bShot").click();
+  });
+
+  /* 底部直连地址（必须用绝对地址，否则 /cam 无斜杠时同样会 404） */
+  document.getElementById("lnkTs").href = U("live.ts");
+  document.getElementById("lnkRaw").href = U("stream.h264");
+  document.getElementById("lnkInfo").href = U("info");
+
+  /* ---------------- 起飞 ---------------- */
+  layout();
+  boot(null);
+})();
+</script>
+</body>
+</html>

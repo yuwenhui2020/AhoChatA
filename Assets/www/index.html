@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <script src="js/i18n.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>聊天</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#07c160">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Mchat">
+    <link rel="apple-touch-icon" href="/icons/icon-192.png">
+    <link rel="stylesheet" href="css/app.css">
+    <script>
+        /* 主题：与网页端 / App 端共用 localStorage.mchat_theme（day|night|auto） */
+        (function () {
+            var KEY = 'mchat_theme';
+            function get() { try { return localStorage.getItem(KEY) || 'auto'; } catch (e) { return 'auto'; } }
+            function sysDark() { return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches; }
+            function resolve(t) {
+                t = t || get();
+                if (t === 'auto') return sysDark() ? 'dark' : 'light';
+                if (t === 'night') return 'dark';   // 兼容后端旧注入值
+                if (t === 'day') return 'light';
+                return t;
+            }
+            function apply(t) { var r = resolve(t); document.documentElement.setAttribute('data-theme', r); return r; }
+            window.MTheme = {
+                get: get, resolve: resolve, apply: apply,
+                set: function (t) { try { localStorage.setItem(KEY, t); } catch (e) { } return apply(t); },
+                toggle: function () { var cur = resolve(); return this.set(cur === 'dark' ? 'light' : 'dark'); }
+            };
+            apply();
+        })();
+    </script>
+</head>
+<body>
+
+<!-- ===================== 主视图：聊天 ===================== -->
+<div id="chatView" class="view" role="main" aria-label="聊天界面">
+    <header class="topbar" role="banner">
+        <button id="btnMenu" class="icon-btn" aria-label="打开侧栏" aria-expanded="false" aria-controls="sidebar">
+            <svg class="ico" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+                <path d="M3 6h18M3 12h18M3 18h18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+        </button>
+        <button id="btnTheme" class="icon-btn" aria-label="日间/夜间主题" aria-pressed="false"><span data-ico="moon"></span></button>
+        <div id="peerStatus" class="topbar-status" aria-live="polite" aria-atomic="true">正在搜索设备…</div>
+        <button id="btnFloat" class="icon-btn" aria-label="悬浮窗设置" aria-expanded="false"><span data-ico="window"></span></button>
+        <button id="btnTools" class="icon-btn" aria-label="工具面板" aria-expanded="false"><span data-ico="tools"></span></button>
+        <button id="btnDraw" class="icon-btn" aria-label="屏幕画板"><span data-ico="pen"></span></button>
+        <!-- 网页版 GPS 页面暂移入回收站，此入口停用；恢复时取消注释（App 现用原生 GPS）
+        <a href="/gps" class="icon-btn" aria-label="GPS 共享位置" title="GPS 共享位置" style="text-decoration:none;display:flex;align-items:center;justify-content:center;">◎</a>
+        -->
+        <a href="/settings" class="icon-btn" aria-label="设置" title="设置" style="text-decoration:none;display:flex;align-items:center;justify-content:center;">⚙</a>
+        <button id="btnCall" class="icon-btn" aria-label="语音通话">
+            <svg class="ico" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+                <path d="M6.6 10.8a13 13 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25 11 11 0 0 0 3.5.6 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1 11 11 0 0 0 .6 3.5 1 1 0 0 1-.25 1z" fill="currentColor"/>
+            </svg>
+        </button>
+    </header>
+
+    <!-- 会话条：房间（房间号=频道）与私聊，长按会话可清空其消息 -->
+    <div id="convBar" class="conv-bar" role="tablist" aria-label="会话列表">
+        <div id="convChips" class="conv-chips" role="presentation"></div>
+    </div>
+
+    <main id="messageList" class="message-list" role="log" aria-live="polite" aria-atomic="false" aria-label="消息列表"></main>
+
+    <footer class="composer" role="contentinfo">
+        <div id="attachBar" class="attach-bar hidden" role="toolbar" aria-label="附件工具栏">
+            <button class="attach-item" data-act="pic" aria-label="发送图片"><span class="ai-ico" data-ico="image"></span><span>图片</span></button>
+            <button class="attach-item" data-act="video" aria-label="发送视频"><span class="ai-ico" data-ico="video"></span><span>视频</span></button>
+            <button class="attach-item" data-act="music" aria-label="发送音乐"><span class="ai-ico" data-ico="music"></span><span>音乐</span></button>
+            <button class="attach-item" data-act="file" aria-label="发送文件"><span class="ai-ico" data-ico="file"></span><span>文件</span></button>
+            <button class="attach-item" data-act="url" aria-label="发送链接"><span class="ai-ico" data-ico="link"></span><span>链接</span></button>
+            <button class="attach-item" data-act="notice" aria-label="发送通知"><span class="ai-ico" data-ico="bell"></span><span>通知</span></button>
+        </div>
+        <div class="composer-top" role="toolbar" aria-label="输入工具栏">
+            <button id="btnVoice" class="voice-record-btn" aria-label="语音输入" aria-pressed="false">
+                <span class="vr-icon" data-ico="mic"></span><span id="btnVoiceLabel" class="vr-label">按住说话</span>
+            </button>
+            <button id="btnKeypad" class="keypad-btn" aria-label="按键大全"><span data-ico="keyboard"></span></button>
+            <button id="btnLocation" class="location-btn" aria-label="位置共享">位置</button>
+            <button id="btnControl" class="control-btn" aria-label="功能控制" aria-expanded="false" aria-controls="controlMenu">功能控制</button>
+        </div>
+        <div id="controlMenu" class="control-menu hidden" aria-hidden="true" role="dialog" aria-label="功能控制菜单" aria-modal="true">
+            <div class="control-menu-head">
+                <span>功能控制</span>
+                <div id="controlGrid" class="control-grid" role="group" aria-label="控制选项"></div>
+                <button id="btnControlClose" class="control-menu-close" aria-label="关闭"><span data-ico="close"></span></button>
+            </div>
+            <div class="dial-wrap">
+                <div class="dial" id="controlDial" role="group" aria-label="控制拨盘">
+                    <button class="dial-arc arc-top"    data-cmd="音量加" aria-label="音量加"><span>＋</span></button>
+                    <button class="dial-arc arc-right"  data-cmd="下一曲" aria-label="下一曲"><span data-ico="next"></span></button>
+                    <button class="dial-arc arc-bottom" data-cmd="音量减" aria-label="音量减"><span>－</span></button>
+                    <button class="dial-arc arc-left"   data-cmd="上一曲" aria-label="上一曲"><span data-ico="prev"></span></button>
+                    <button class="dial-center" data-cmd="播放暂停" aria-label="播放/暂停"><span data-ico="playpause"></span></button>
+                </div>
+            </div>
+        </div>
+        <div id="locationCard" class="location-card hidden" aria-hidden="true" role="region" aria-label="位置共享">
+            <div class="location-card-head">
+                <span>位置共享</span>
+                <button id="btnLocShare" class="topbar-loc-btn location-share-btn" aria-label="共享位置">共享</button>
+                <span id="locationSelf" class="location-self">定位中…</span>
+            </div>
+            <div id="locationMap" class="location-map">
+                <div id="locationHint" class="location-hint">正在获取 GPS 定位…</div>
+                <div id="locationDetail" class="location-detail hidden"></div>
+            </div>
+            <div class="location-legend">
+                <span class="lg-dot lg-self"></span>本机
+                <span class="lg-dot lg-peer"></span>其他设备（点击查看坐标差）
+            </div>
+        </div>
+        <div class="composer-row">
+            <button id="btnAttach" class="round-btn" aria-label="更多">＋</button>
+            <textarea id="msgInput" rows="1" placeholder="输入消息"></textarea>
+            <button id="btnSend" class="send-btn" aria-label="发送">发送</button>
+        </div>
+        <div id="notifRelayBar" class="notif-bar hidden">
+            <span class="notif-bar-text">未开启通知转发：收到系统通知会自动作为消息发出</span>
+            <button id="btnEnableNotif" class="notif-bar-btn">去开启</button>
+        </div>
+    </footer>
+    <!-- ===================== 按键大全浮层 ===================== -->
+<div id="keypadOverlay" class="overlay keypad-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="keypadTitle">
+    <div class="keypad-box" role="document">
+        <div class="keypad-header">
+            <span class="keypad-title" id="keypadTitle"><span data-ico="keyboard"></span> 按键大全</span>
+            <button id="keypadClose" class="keypad-close" aria-label="关闭"><span data-ico="close"></span></button>
+        </div>
+        <div class="keypad-grid" id="keypadGrid" role="grid" aria-label="按键网格">
+            <!-- 按键由 JS 动态生成 -->
+        </div>
+        <div class="keypad-footer">
+            <span class="keypad-hint"><span data-ico="bulb"></span> 点击按键发送指令 · 也可直接按键盘组合键</span>
+        </div>
+    </div>
+</div>
+</div>
+
+<!-- ===================== 侧栏：全屏导航 ===================== -->
+<div id="sidebar" class="sidebar" role="dialog" aria-modal="true" aria-labelledby="sidebarTitle">
+    <div class="sidebar-head">
+        <button id="btnCloseSidebar" class="icon-btn" aria-label="关闭"><span data-ico="close"></span></button>
+        <form id="omniForm" class="omnibox" role="search" aria-label="地址栏">
+            <input id="omniInput" type="text" inputmode="url" autocomplete="off"
+                   placeholder="输入网址直达，或输入关键词必应搜索" aria-label="网址或搜索关键词">
+            <button type="submit" class="omni-go" aria-label="前往">→</button>
+        </form>
+    </div>
+    <div class="sidebar-list" id="sidebarList" role="listbox" aria-label="导航菜单"></div>
+    <div class="sidebar-foot">
+        <span id="selfName" class="self-name" aria-live="polite"></span>
+    </div>
+</div>
+
+<!-- ===================== 内置浏览器 ===================== -->
+<div id="browserView" class="view browser-view">
+    <header class="browser-bar">
+        <button id="btnBrowserMenu" class="icon-btn" aria-label="侧栏">
+            <span class="hamburger"><i></i><i></i><i></i></span>
+        </button>
+        <button id="btnBrowserBack" class="icon-btn" aria-label="后退">‹</button>
+        <div id="browserUrl" class="browser-url"></div>
+        <button id="btnBrowserReload" class="icon-btn" aria-label="刷新">⟳</button>
+    </header>
+    <div class="browser-frame-wrap">
+        <iframe id="browserFrame" class="browser-frame" referrerpolicy="no-referrer"></iframe>
+    </div>
+</div>
+
+<!-- ===================== 内置视频播放器 ===================== -->
+<div id="videoPlayer" class="overlay video-overlay" role="dialog" aria-modal="true" aria-labelledby="videoTitle">
+    <button class="overlay-close" data-close="videoPlayer" aria-label="关闭"><span data-ico="close"></span></button>
+    <video id="videoEl" controls playsinline aria-label="视频播放器"></video>
+    <div id="videoTitle" class="overlay-title" id="videoTitle"></div>
+</div>
+
+<!-- ===================== 图片查看器 ===================== -->
+<div id="imageViewer" class="overlay image-overlay" role="dialog" aria-modal="true" aria-labelledby="imageTitle">
+    <button class="overlay-close" data-close="imageViewer" aria-label="关闭"><span data-ico="close"></span></button>
+    <img id="imageEl" alt="" aria-label="图片预览">
+</div>
+
+<!-- ===================== 音乐播放器 ===================== -->
+<div id="musicPlayer" class="overlay music-overlay" role="dialog" aria-modal="true" aria-labelledby="musicName">
+    <button class="overlay-close" data-close="musicPlayer" aria-label="关闭"><span data-ico="close"></span></button>
+    <div class="music-stage">
+        <div class="music-cover-wrap">
+            <img id="musicCover" class="music-cover" alt="" aria-hidden="true">
+        </div>
+        <div id="musicName" class="music-name" id="musicName"></div>
+        <div id="musicArtist" class="music-artist"></div>
+        <div id="lyricBox" class="lyric-box" role="log" aria-live="polite" aria-label="歌词"></div>
+        <div class="music-controls">
+            <div class="progress-row">
+                <span id="musicCur" class="time" aria-label="当前时间">00:00</span>
+                <div id="musicBar" class="progress-track" role="slider" aria-label="播放进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div id="musicFill" class="progress-fill"></div></div>
+                <span id="musicDur" class="time" aria-label="总时长">00:00</span>
+            </div>
+            <button id="musicToggle" class="play-btn" aria-label="播放/暂停"><span data-ico="play"></span></button>
+        </div>
+    </div>
+    <audio id="audioEl"></audio>
+</div>
+
+<!-- 隐藏的文件选择器 -->
+<input type="file" id="filePicker" class="hidden-file" accept="*/*">
+
+<!-- ===================== 语音通话浮层 ===================== -->
+<div id="callOverlay" class="overlay call-overlay" role="dialog" aria-modal="true" aria-labelledby="callName">
+    <div class="call-box">
+        <button id="callMinimize" class="call-min-btn" aria-label="最小化" title="最小化">—</button>
+        <div id="callAvatar" class="call-avatar" aria-hidden="true"><span data-ico="phone"></span></div>
+        <div id="callName" class="call-name" id="callName">通话</div>
+        <div id="callState" class="call-state" aria-live="polite">正在连接…</div>
+        <div id="callPeers" class="call-peers" role="listbox" aria-label="通话成员"></div>
+        <div class="call-actions">
+            <button id="callAccept" class="call-btn accept hidden" aria-label="接听">接听</button>
+            <button id="callHangup" class="call-btn hangup" aria-label="挂断">挂断</button>
+        </div>
+    </div>
+    <audio id="callRemoteAudio" autoplay></audio>
+</div>
+
+<!-- 最小化后悬浮恢复气泡 -->
+<button id="callMinBubble" class="call-min-bubble hidden" aria-label="通话中，点击恢复"><span data-ico="phone"></span> 通话中（点击恢复）</button>
+
+<!-- ===================== BLE 设备选择弹窗 ===================== -->
+<div id="btChooser" class="overlay bt-chooser hidden" role="dialog" aria-modal="true" aria-labelledby="btTitle">
+    <div class="bt-box">
+        <div class="bt-title" id="btTitle">选择蓝牙设备</div>
+        <ul id="btDeviceList" class="bt-list" role="listbox" aria-label="蓝牙设备列表"></ul>
+        <div id="btScanHint" class="bt-hint" aria-live="polite">正在扫描…</div>
+        <div class="bt-actions">
+            <button id="btRescan" class="btn" aria-label="重新扫描">重新扫描</button>
+            <button id="btCancel" class="btn ghost" aria-label="取消">取消</button>
+        </div>
+    </div>
+</div>
+
+<!-- ===================== 悬浮窗设置面板 ===================== -->
+<div id="botOverlay" class="overlay bot-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="botTitle">
+    <div class="bot-box">
+        <div class="bot-header">
+            <span class="bot-title" id="botTitle"><span data-ico="window"></span> 悬浮窗</span>
+            <button id="botClose" class="bot-close" aria-label="关闭"><span data-ico="close"></span></button>
+        </div>
+        <div class="bot-body">
+            <div class="bot-section">
+                <div class="bot-row">
+                    <span class="bot-label">悬浮窗（快速收发消息 / 媒体控制键）</span>
+                    <button id="floatToggleBtn" class="bot-switch" aria-label="悬浮窗开关" aria-pressed="false"><span class="bot-knob"></span></button>
+                </div>
+                <div class="bot-row">
+                    <span id="floatPermHint" class="bot-tip">开启需要授予悬浮窗权限</span>
+                    <button id="floatPermBtn" class="bot-btn ghost" aria-label="去授权">去授权</button>
+                </div>
+                <div class="bot-tip">浮窗可拖拽移动，点击展开：预览最近消息、输入发送、控制播放/音量，重启 App 后按开关状态自动恢复。</div>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+<!-- ===================== 工具面板：文件 / 群组 / 身份 / 频道 ===================== -->
+<div id="toolsOverlay" class="overlay tools-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="toolsTitle">
+    <div class="tools-box">
+        <div class="tools-header">
+            <span class="tools-title" id="toolsTitle">工具</span>
+            <button class="tools-close" data-close="toolsOverlay" aria-label="关闭"><span data-ico="close"></span></button>
+        </div>
+        <div class="tools-tabs" id="toolsTabs" role="tablist" aria-label="工具分类">
+            <button class="tools-tab active" data-tab="files" role="tab" aria-selected="true" aria-controls="panel-files">文件</button>
+            <button class="tools-tab" data-tab="groups" role="tab" aria-selected="false" aria-controls="panel-groups">群组</button>
+            <button class="tools-tab" data-tab="identity" role="tab" aria-selected="false" aria-controls="panel-identity">身份</button>
+            <button class="tools-tab" data-tab="channel" role="tab" aria-selected="false" aria-controls="panel-channel">频道</button>
+        </div>
+        <div class="tools-body">
+
+            <!-- 文件管理 -->
+            <section class="tools-section active" data-sec="files">
+                <div class="tools-row">
+                    <button id="fileUp" class="tools-btn"><span data-ico="up"></span> 上级</button>
+                    <span id="filePath" class="tools-path">/</span>
+                    <label class="tools-btn"><span data-ico="up"></span> 上传<input type="file" id="fileUploadInput" hidden></label>
+                </div>
+                <div id="fileList" class="tools-list"></div>
+            </section>
+
+            <!-- 群组管理 -->
+            <section class="tools-section" data-sec="groups">
+                <div class="tools-row">
+                    <input id="groupName" class="tools-input" placeholder="新群组名称">
+                    <button id="groupCreate" class="tools-btn">＋ 建群</button>
+                </div>
+                <div id="groupList" class="tools-list"></div>
+            </section>
+
+            <!-- 身份与权限 -->
+            <section class="tools-section" data-sec="identity">
+                <div class="tools-kv"><span>qaul 公钥指纹</span><b id="idFinger">—</b></div>
+                <div class="tools-kv"><span>显示名称</span><b id="idName">—</b></div>
+                <div class="tools-row">
+                    <button id="idRotate" class="tools-btn warn">轮换身份</button>
+                    <button id="idFiles" class="tools-btn">授予文件访问</button>
+                </div>
+                <div class="tools-tip">轮换身份会生成新的 qaul 密钥；旧身份的历史私聊将独立保留。文件访问用于把共享目录落到公共存储。</div>
+            </section>
+
+            <!-- 频道与双通道 -->
+            <section class="tools-section" data-sec="channel">
+                <div id="channelStatus" class="tools-list"></div>
+                <div class="tools-row">
+                    <span class="tools-kv"><span>双通道</span><b id="dualState">—</b></span>
+                    <button id="dualToggle" class="tools-btn">切换</button>
+                </div>
+                <div class="tools-row">
+                    <span class="tools-kv"><span>一起听（分享播放列表）</span><b id="listenState">—</b></span>
+                    <button id="listenToggle" class="tools-btn">切换</button>
+                </div>
+                <div class="tools-tip">开启后本机播放音乐时，会把整条播放列表连同封面、歌词一起发给局域网设备；关闭后音乐卡片照常更新，但不再附带列表。</div>
+            </section>
+
+        </div>
+    </div>
+</div>
+
+<!--
+    蓝牙 Polyfill：必须最先加载。
+    它会在本顶层框架注册 postMessage 代理，内置浏览器 iframe 中的在线网页
+    无法直接访问 @JavascriptInterface，其蓝牙请求会经 parent.postMessage
+    转发到本框架代为调用原生，结果再回传。若本框架未加载该脚本，
+    iframe 里的网页调用 navigator.bluetooth 将永远得不到响应。
+-->
+<script src="/__btpolyfill__.js"></script>
+<script src="/js/icons.js"></script>
+<script src="js/bridge.js"></script>
+<script src="js/media.js"></script>
+<script src="js/remote-media.js"></script>
+<script src="js/chat.js"></script>
+<script src="js/browser.js"></script>
+<script src="js/floatpanel.js"></script>
+<script src="js/tools.js"></script>
+<script src="js/app.js"></script>
+<script src="js/bt-chooser.js"></script>
+
+<!-- Service Worker 注册 -->
+<script>
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function() {
+        navigator.serviceWorker.register('/sw.js')
+            .then(function(registration) {
+                console.log('[SW] 注册成功:', registration.scope);
+                
+                // 监听更新
+                registration.addEventListener('updatefound', function() {
+                    var newWorker = registration.installing;
+                    newWorker.addEventListener('statechange', function() {
+                        if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                            // 有新版本可用
+                            if (confirm(window.T ? window.T('发现新版本，是否立即更新？') : '发现新版本，是否立即更新？')) {
+                                window.location.reload();
+                            }
+                        }
+                    });
+                });
+                
+                // 监听控制器变更
+                navigator.serviceWorker.addEventListener('controllerchange', function() {
+                    if (confirm(window.T ? window.T('应用已更新，是否刷新？') : '应用已更新，是否刷新？')) {
+                        window.location.reload();
+                    }
+                });
+                
+                // 监听在线/离线状态
+                window.addEventListener('online', function() {
+                    console.log('[App] 网络已连接');
+                    document.body.classList.remove('offline');
+                });
+                window.addEventListener('offline', function() {
+                    console.log('[App] 网络已断开');
+                    document.body.classList.add('offline');
+                });
+            })
+            .catch(function(error) {
+                console.error('[SW] 注册失败:', error);
+            });
+    });
+}
+</script>
+</body>
+</html>

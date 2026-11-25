@@ -1,0 +1,975 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <ProductVersion>8.0.30703</ProductVersion>
+    <SchemaVersion>2.0</SchemaVersion>
+    <ProjectGuid>{2BA0D78A-32B9-4CF7-8119-DDCF7DD0D09A}</ProjectGuid>
+    <ProjectTypeGuids>{EFBA0AD7-5A72-4C68-AF49-83D382785DCF};{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}</ProjectTypeGuids>
+    <TemplateGuid>{84dd83c5-0fe3-4294-9419-09e7c8ba324f}</TemplateGuid>
+    <OutputType>Library</OutputType>
+    <AppDesignerFolder>Properties</AppDesignerFolder>
+    <RootNamespace>AhoChatA</RootNamespace>
+    <AssemblyName>AhoChatA</AssemblyName>
+    <FileAlignment>512</FileAlignment>
+    <Deterministic>True</Deterministic>
+    <AndroidApplication>True</AndroidApplication>
+    <AndroidResgenFile>Resources\Resource.designer.cs</AndroidResgenFile>
+    <AndroidResgenClass>Resource</AndroidResgenClass>
+    <GenerateSerializationAssemblies>Off</GenerateSerializationAssemblies>
+    <AndroidUseLatestPlatformSdk>false</AndroidUseLatestPlatformSdk>
+    <TargetFrameworkVersion>v13.0</TargetFrameworkVersion>
+    <AndroidManifest>Properties\AndroidManifest.xml</AndroidManifest>
+    <MonoAndroidResourcePrefix>Resources</MonoAndroidResourcePrefix>
+    <MonoAndroidAssetsPrefix>Assets</MonoAndroidAssetsPrefix>
+    <AndroidEnableSGenConcurrent>true</AndroidEnableSGenConcurrent>
+    <AndroidUseAapt2>true</AndroidUseAapt2>
+    <AndroidHttpClientHandlerType>Xamarin.Android.Net.AndroidClientHandler</AndroidHttpClientHandlerType>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
+    <DebugSymbols>false</DebugSymbols>
+    <DebugType>portable</DebugType>
+    <Optimize>False</Optimize>
+    <OutputPath>bin\Debug\</OutputPath>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+    <AndroidLinkMode>None</AndroidLinkMode>
+    <EmbedAssembliesIntoApk>true</EmbedAssembliesIntoApk>
+    <!-- AOT：IL 预编译为各 ABI 原生代码，省掉运行时 JIT，冷启动与 CPU 密集路径更快。
+         本项目的 Debug 配置就是实际分发包（Debuggable=false / 无调试符号），故同样开启。
+         前提：需要 Android NDK 提供汇编/链接工具链；构建会变慢、APK 会变大。
+         临时回退：msbuild AhoChatA.csproj /p:AotAssemblies=false -->
+    <AotAssemblies>true</AotAssemblies>
+    <AndroidAotMode>Normal</AndroidAotMode>
+    <EnableLLVM>false</EnableLLVM>
+    <!-- Profiled AOT（Startup Tracing）：按内置 startup.aotprofile 只预编译启动热路径。
+         全量 AOT 会在 Xamarin.Google.Android.Material.dll 上报 XA3001（AndroidX 绑定包
+         对 DrawableWrapper 的 typeref 解析不了），Profiled AOT 可绕开且体积/构建时间更省。 -->
+    <AndroidEnableProfiledAot>true</AndroidEnableProfiledAot>
+    <BundleAssemblies>false</BundleAssemblies>
+    <AndroidEnableSGenConcurrent>false</AndroidEnableSGenConcurrent>
+    <!-- 不把任何 .pdb/.mdb 调试符号打进 APK，缩小体积 -->
+    <AndroidIncludeDebugSymbols>false</AndroidIncludeDebugSymbols>
+    <!-- 非调试用途的分发包：去掉 debug 插桩，进一步减小体积 -->
+    <Debuggable>false</Debuggable>
+    <AndroidSupportedAbis />
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+    <DebugSymbols>false</DebugSymbols>
+    <DebugType>portable</DebugType>
+    <Optimize>True</Optimize>
+    <OutputPath>bin\Release\</OutputPath>
+    <DefineConstants>TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>5</WarningLevel>
+    <AndroidPackageFormat>apk</AndroidPackageFormat>
+    <AndroidManagedSymbols>false</AndroidManagedSymbols>
+    <AndroidIncludeDebugSymbols>false</AndroidIncludeDebugSymbols>
+    <AndroidLinkMode>SdkOnly</AndroidLinkMode>
+    <EmbedAssembliesIntoApk>true</EmbedAssembliesIntoApk>
+    <AotAssemblies>true</AotAssemblies>
+    <AndroidAotMode>Normal</AndroidAotMode>
+    <EnableLLVM>false</EnableLLVM>
+    <AndroidEnableProfiledAot>true</AndroidEnableProfiledAot>
+    <BundleAssemblies>false</BundleAssemblies>
+    <Debugger>Xamarin</Debugger>
+  </PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Dns\Filters\adguard-dns-filter.txt" LogicalName="Mchat.Dns.AdGuardDnsFilter.txt" />
+    <EmbeddedResource Include="Dns\Filters\AdGuardSDNSFilter-LICENSE.txt" LogicalName="Mchat.Dns.AdGuardDnsFilter.License.txt" />
+    <EmbeddedResource Include="Dns\Filters\README.md" LogicalName="Mchat.Dns.AdGuardDnsFilter.Notice.md" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="System" />
+    <Reference Include="System.Xml" />
+    <Reference Include="System.Core" />
+    <Reference Include="Mono.Android" />
+    <Reference Include="System.Numerics" />
+    <Reference Include="System.Numerics.Vectors" />
+    <Reference Include="System.Net.Http" />
+    <Reference Include="System.IO.Compression" />
+    <Reference Include="System.IO.Compression.FileSystem" />
+    <Reference Include="Concentus">
+      <HintPath>libs\Concentus.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="ControlExecutor.cs" />
+    <Compile Include="DrawboardDiscovery.cs" />
+    <!-- LanChat 频道：设备常驻状态（电量/IP）、定位上报、短信转发 -->
+    <Compile Include="DeviceStatus.cs" />
+    <Compile Include="LocationReporter.cs" />
+    <Compile Include="SmsReceiver.cs" />
+    <Compile Include="SmsForwarder.cs" />
+    <Compile Include="SmsInboxWatcher.cs" />
+    <Compile Include="IpCameraServer.cs" />
+    <Compile Include="IpCameraDiscoverer.cs" />
+    <Compile Include="IpCameraActivity.cs" />
+    <Compile Include="GpsRadarActivity.cs" />
+    <Compile Include="SignalProbeActivity.cs" />
+    <Compile Include="ScreenCastService.cs" />
+    <Compile Include="CameraShareService.cs" />
+    <Compile Include="DrawShareServer.cs" />
+    <Compile Include="FileShareHttp.cs" />
+    <Compile Include="CallVideoEngine.cs" />
+    <Compile Include="CallActivity.cs" />
+    <Compile Include="ChannelSettingsActivity.cs" />
+    <Compile Include="IconView.cs" />
+    <Compile Include="IconDrawable.cs" />
+    <Compile Include="Icons.cs" />
+    <Compile Include="Perf.cs" />
+    <Compile Include="OtpAuth.cs" />
+    <Compile Include="ShareCast.cs" />
+    <Compile Include="ShareViewActivity.cs" />
+    <Compile Include="ShareRouterActivity.cs" />
+    <Compile Include="UserScriptImportActivity.cs" />
+    <Compile Include="AhoChatApp.cs" />
+    <Compile Include="ThemeManager.cs" />
+    <Compile Include="AlphabetIndexBar.cs" />
+    <Compile Include="BaseActivity.cs" />
+    <Compile Include="L10n.cs" />
+    <Compile Include="L10n.Dict.cs" />
+    <!-- 应用内浏览器（系统 WebView）：聊天里的链接 / 裸 IP 直接在应用内打开 -->
+    <Compile Include="BrowserActivity.cs" />
+    <Compile Include="BrowserJsBridge.cs" />
+    <Compile Include="TranslateEngine.cs" />
+    <Compile Include="ImagePdfExporter.cs" />
+    <Compile Include="UserScriptManager.cs" />
+    <Compile Include="NetworkLogStore.cs" />
+    <Compile Include="ScanActivity.cs" />
+    <!-- Office 文档查看器（docx/xlsx/pptx，WebView + 前端 JS 解析 OOXML；源自 gander-2.10） -->
+    <Compile Include="OfficeViewerActivity.cs" />
+    <!-- apk.1 安装转接：识别被 QQ/微信重命名的安装包并交给系统安装器 -->
+    <Compile Include="ApkInstallActivity.cs" />
+    <!-- 自动接收局域网文件：配置 + 任意扩展名落盘 + Web API -->
+    <Compile Include="AutoReceiveSettings.cs" />
+    <Compile Include="AutoReceive.cs" />
+    <Compile Include="WebServer.AutoReceive.cs" />
+    <!-- 旧版 PPT（二进制 .ppt/.pps）文本提取器 -->
+    <Compile Include="OldPptReader.cs" />
+    <!-- 阅读模块字体优化（中文 fallback 字体栈注入，原生/Web 共用） -->
+    <Compile Include="ReaderFonts.cs" />
+    <Compile Include="ThemeEngine.cs" />
+    <Compile Include="IosStyle.cs" />
+    <Compile Include="Warmup.cs" />
+    <Compile Include="PrivacyActivity.cs" />
+    <Compile Include="AcknowledgementsActivity.cs" />
+    <Compile Include="CameraViewActivity.cs" />
+    <Compile Include="StreamViewer.cs" />
+    <Compile Include="Mp4Muxer.cs" />
+    <Compile Include="TsMuxer.cs" />
+    <Compile Include="CameraTestReceiver.cs" />
+    <Compile Include="Resources\Resource.designer.cs" />
+    <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="VoiceCallManager.cs" />
+    <Compile Include="MchatBridge.cs" />
+    <Compile Include="NotificationBridge.cs" />
+    <!-- 消息通知（带通知栏快捷回复）+ 开机自启 -->
+    <Compile Include="ChatNotifier.cs" />
+    <Compile Include="BootReceiver.cs" />
+    <Compile Include="AutoStartHelper.cs" />
+    <Compile Include="AppHostBridge.cs" />
+    <Compile Include="ChatForegroundService.cs" />
+    <Compile Include="NotificationRelayService.cs" />
+    <Compile Include="WebServer.cs" />
+    <Compile Include="WebServer.Gateway.cs" />
+    <Compile Include="MusicSync.cs" />
+    <Compile Include="MusicSyncReceiver.cs" />
+    <!-- 阅读模块（legado 功能面的 C# 原生实现） -->
+    <Compile Include="ReaderActivity.cs" />
+    <Compile Include="MusicActivity.cs" />
+    <Compile Include="VideoActivity.cs" />
+    <Compile Include="VideoActivity.WatchTogether.cs" />
+    <Compile Include="PhotoActivity.cs" />
+    <Compile Include="WebServer.MediaApi.cs" />
+    <!-- 在线影视：TVBox 订阅 + 苹果CMS 多源聚合（App 与网页端共用） -->
+    <Compile Include="Vod\VodModels.cs" />
+    <Compile Include="Vod\SourceDetector.cs" />
+    <Compile Include="Vod\VodConfig.cs" />
+    <Compile Include="Vod\VodCache.cs" />
+    <Compile Include="Vod\WatchTogether.cs" />
+    <Compile Include="Vod\VodApi.cs" />
+    <Compile Include="Vod\VodExoCache.cs" />
+    <Compile Include="Vod\VideoCacheProxy.cs" />
+    <Compile Include="Vod\VodCast.cs" />
+    <Compile Include="Vod\TsToMp4.cs" />
+    <Compile Include="Vod\DownloadCenter.cs" />
+    <Compile Include="Vod\DownloadCenter.Http.cs" />
+    <Compile Include="Downloads\HttpDownloadJob.cs" />
+    <Compile Include="Downloads\HlsPlaylist.cs" />
+    <Compile Include="WebServer.VodApi.cs" />
+    <Compile Include="MusicActivity.Vod.cs" />
+    <Compile Include="VodDetailActivity.cs" />
+    <Compile Include="ExoVideoPlayer.cs" />
+    <Compile Include="Music\Song.cs" />
+    <Compile Include="Music\SongArt.cs" />
+    <Compile Include="Music\PhotoLibrary.cs" />
+    <Compile Include="Music\Lyrics.cs" />
+    <Compile Include="Music\EmbedLyrics.cs" />
+    <Compile Include="Music\MusicLibrary.cs" />
+    <Compile Include="Music\Pinyin.cs" />
+    <Compile Include="Music\OnlineMusic.cs" />
+    <Compile Include="Music\MusicSources.cs" />
+    <Compile Include="Music\MusicCast.cs" />
+    <Compile Include="Music\MusicPlayer.cs" />
+    <Compile Include="Music\PlaylistStore.cs" />
+    <Compile Include="Reader\BookSource.cs" />
+    <Compile Include="Reader\AnalyzeRule.cs" />
+    <Compile Include="Reader\Models.cs" />
+    <Compile Include="Reader\BookParser.cs" />
+    <Compile Include="Reader\BookParserEx.cs" />
+    <Compile Include="Reader\PdfEngine.cs" />
+    <Compile Include="Reader\PdfCache.cs" />
+    <Compile Include="Reader\PdfPageView.cs" />
+    <Compile Include="Reader\PdfContinuousView.cs" />
+    <Compile Include="Reader\ReaderStore.cs" />
+    <Compile Include="Reader\ReaderEngine.cs" />
+    <Compile Include="Reader\EncodingEx.cs" />
+    <Compile Include="Reader\ReaderCookies.cs" />
+    <Compile Include="Reader\ReaderLibrary.cs" />
+    <Compile Include="FloatingWindowService.cs" />
+    <Compile Include="ScreenDrawService.cs" />
+    <Compile Include="ScreenDrawReceiver.cs" />
+    <Compile Include="DrawView.cs" />
+    <Compile Include="FtpServer.cs" />
+    <Compile Include="LanShareService.cs" />
+    <Compile Include="DownloaderService.cs" />
+    <Compile Include="DownloaderReceiver.cs" />
+    <Compile Include="TrashManager.cs" />
+    <Compile Include="DownloadEngine.cs" />
+    <Compile Include="CoreHost.cs" />
+    <Compile Include="SplashActivity.cs" />
+    <Compile Include="ChatActivity.cs" />
+    <Compile Include="DownloadActivity.cs" />
+    <Compile Include="Chat\Convs.cs" />
+    <Compile Include="Chat\Channels.cs" />
+    <Compile Include="Chat\MsgUtil.cs" />
+    <!-- 附件卡片：图片直接显示、视频显示封面、文件显示卡片；一次点击下载、再次点击打开 -->
+    <Compile Include="Chat\MediaCard.cs" />
+    <Compile Include="Chat\MediaCompress.cs" />
+    <Compile Include="Chat\MusicCardView.cs" />
+    <Compile Include="Chat\ListenTogether.cs" />
+    <Compile Include="Chat\SyncClock.cs" />
+    <Compile Include="Chat\SyncListen.cs" />
+    <Compile Include="Chat\VideoShare.cs" />
+    <Compile Include="Chat\VideoCardView.cs" />
+    <Compile Include="Chat\MediaShare.cs" />
+    <Compile Include="Chat\MediaAutoOpen.cs" />
+    <!-- 聊天媒体内置打开（图片/视频/音乐/书籍直投查看器）+ 系统分享统一入口 -->
+    <Compile Include="Chat\InternalViewer.cs" />
+    <Compile Include="Chat\ChatStore.cs" />
+    <!-- 消息正文里的链接 / 裸 IP 识别与可点击文本 -->
+    <Compile Include="Chat\TextLinks.cs" />
+    <Compile Include="Qaul\Pb.cs" />
+    <Compile Include="Qaul\QaulWire.cs" />
+    <Compile Include="Qaul\QaulChannel.cs" />
+    <!-- libp2p 网络层（qaul 节点之间真正用的协议栈） -->
+    <Compile Include="Libp2p\Crypto.cs" />
+    <Compile Include="Crypto\MchatSeal.cs" />
+    <Compile Include="MchatMid.cs" />
+    <Compile Include="Libp2p\Multistream.cs" />
+    <Compile Include="Libp2p\Noise.cs" />
+    <Compile Include="Libp2p\Yamux.cs" />
+    <Compile Include="Libp2p\TransportMux.cs" />
+    <Compile Include="Libp2p\Mdns.cs" />
+    <Compile Include="Libp2p\QaulNode.cs" />
+    <!-- QUIC v1 + TLS 1.3 + libp2p 证书：直连 qaul 公共节点（udp/9229/quic-v1） -->
+    <Compile Include="Libp2p\Quic.cs" />
+    <Compile Include="Libp2p\Tls13.cs" />
+    <Compile Include="Libp2p\AesGcmCipher.cs" />
+    <Compile Include="Libp2p\Libp2pCert.cs" />
+    <!-- qaul 端到端加密（KK）+ 消息/群组服务 -->
+    <Compile Include="Qaul\Crypto\QaulKk.cs" />
+    <Compile Include="Qaul\Crypto\QaulCrypto.cs" />
+    <Compile Include="Qaul\QaulMessaging.cs" />
+    <!-- 身份 / 指纹（qaul Ed25519 + bitchat X25519/Ed25519，可更换） -->
+    <Compile Include="Identity\Curve25519.cs" />
+    <Compile Include="Identity\P256.cs" />
+    <Compile Include="Identity\Base58.cs" />
+    <Compile Include="Identity\LocalIdentity.cs" />
+    <Compile Include="Identity\IdentityStore.cs" />
+    <Compile Include="Bitchat\BitchatPacket.cs" />
+    <Compile Include="Bitchat\BitchatTransport.cs" />
+    <Compile Include="Transport\WlanP2pChannel.cs" />
+    <!-- Wi-Fi Aware（NAN）：链路层真对等（无 GO），Android 8+ 设备支持时启用 -->
+    <Compile Include="Transport\WifiAwareChannel.cs" />
+    <!-- 多链路网格路由：跳数控制 + 链路健康统计（中继策略） -->
+    <Compile Include="Transport\MeshRouter.cs" />
+    <!-- 出站队列：单线程发送 + 指数退避重传 + 超时丢弃（参考 qaul 的 retransmit 与 DTN 托管） -->
+    <Compile Include="Transport\MeshOutbox.cs" />
+    <!-- ===== 远程桌面（对接 desk / Windows 被控端）=====
+         协议与加密直接使用 desk 工程的同一份源码（源链接而非副本），
+         任何一端改协议，另一端编译后立即感知，从源头杜绝"能对上、行为不一致"。 -->
+    <Compile Include="RemoteDesk\RdSession.cs" />
+    <Compile Include="RemoteDesk\RdH264Decoder.cs" />
+    <Compile Include="RemoteDesk\RdH264Encoder.cs" />
+    <Compile Include="RemoteDesk\RdScreenGrabber.cs" />
+    <Compile Include="RemoteDesk\ScreenShareSettings.cs" />
+    <Compile Include="RemoteDesk\RdInputService.cs" />
+    <Compile Include="RemoteDesk\RdHostServer.cs" />
+    <Compile Include="RemoteDesk\RdHostService.cs" />
+    <Compile Include="RemoteDeskActivity.cs" />
+    <Compile Include="RemoteHostActivity.cs" />
+    <Compile Include="SharedFromDesk\RdSecure.cs" />
+    <Compile Include="SharedFromDesk\Protocol.cs" />
+    <Compile Include="Dns\DnsServer.cs" />
+    <Compile Include="Dns\DnsVpnService.cs" />
+    <Compile Include="Dns\DnsVpnPacket.cs" />
+    <Compile Include="Dns\DnsTcpTun.cs" />
+    <Compile Include="Dns\DnsTunLoopback.cs" />
+    <Compile Include="Dns\DnsManager.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Resources\AboutResources.txt" />
+    <None Include="Properties\AndroidManifest.xml" />
+    <None Include="Assets\AboutAssets.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <AndroidResource Include="Resources\layout\activity_main.xml">
+      <SubType>Designer</SubType>
+    </AndroidResource>
+    <AndroidResource Include="Resources\layout\office_viewer.axml">
+      <SubType>Designer</SubType>
+    </AndroidResource>
+    <AndroidResource Include="Resources\layout\content_main.xml">
+      <SubType>Designer</SubType>
+    </AndroidResource>
+    <AndroidResource Include="Resources\layout\activity_music_sync.xml">
+      <SubType>Designer</SubType>
+    </AndroidResource>
+    <AndroidResource Include="Resources\layout\floating_panel.xml">
+      <SubType>Designer</SubType>
+    </AndroidResource>
+    <AndroidResource Include="Resources\layout\screen_draw.xml">
+      <SubType>Designer</SubType>
+    </AndroidResource>
+    <AndroidResource Include="Resources\layout\screen_draw_bar.xml">
+      <SubType>Designer</SubType>
+    </AndroidResource>
+    <AndroidResource Include="Resources\values\colors.xml" />
+    <AndroidResource Include="Resources\values\dimens.xml" />
+    <AndroidResource Include="Resources\values\strings.xml" />
+    <AndroidResource Include="Resources\values-en\strings.xml" />
+    <AndroidResource Include="Resources\values\styles.xml" />
+    <AndroidResource Include="Resources\menu\menu_main.xml" />
+    <AndroidResource Include="Resources\menu\browser_menu.xml" />
+    <AndroidResource Include="Resources\layout\activity_chat_native.xml">
+      <SubType>Designer</SubType>
+    </AndroidResource>
+    <AndroidResource Include="Resources\layout\activity_ipcamera.xml">
+      <SubType>Designer</SubType>
+    </AndroidResource>
+    <AndroidResource Include="Resources\layout\activity_cameraview.xml">
+      <SubType>Designer</SubType>
+    </AndroidResource>
+    <AndroidResource Include="Resources\layout\activity_call.xml">
+      <SubType>Designer</SubType>
+    </AndroidResource>
+    <AndroidResource Include="Resources\layout\notification_music.xml">
+      <SubType>Designer</SubType>
+    </AndroidResource>
+    <AndroidResource Include="Resources\layout\notification_seek_seg.xml">
+      <SubType>Designer</SubType>
+    </AndroidResource>
+    <AndroidResource Include="Resources\drawable\card_bg.xml" />
+    <AndroidResource Include="Resources\drawable\splash_bg.xml" />
+    <AndroidResource Include="Resources\drawable\call_btn.xml" />
+    <AndroidResource Include="Resources\drawable\call_btn_danger.xml" />
+    <AndroidResource Include="Resources\drawable\call_btn_ok.xml" />
+    <AndroidResource Include="Resources\drawable\bubble_in.xml" />
+    <AndroidResource Include="Resources\drawable\bubble_out.xml" />
+    <AndroidResource Include="Resources\drawable\avatar_self.xml" />
+    <AndroidResource Include="Resources\drawable\avatar_other.xml" />
+    <AndroidResource Include="Resources\drawable\chip_normal.xml" />
+    <AndroidResource Include="Resources\drawable\chip_active.xml" />
+    <AndroidResource Include="Resources\drawable\input_bg.xml" />
+    <AndroidResource Include="Resources\drawable\send_bg.xml" />
+    <AndroidResource Include="Resources\drawable\bg_round8.xml" />
+    <AndroidResource Include="Resources\drawable\ios_dialog_bg.xml" />
+    <AndroidResource Include="Resources\drawable\ios_dialog_bg_night.xml" />
+    <AndroidResource Include="Resources\drawable\ic_check_white.xml" />
+    <AndroidResource Include="Resources\drawable\ios_check_off.xml" />
+    <AndroidResource Include="Resources\drawable\ios_check_on.xml" />
+    <AndroidResource Include="Resources\drawable\ios_checkbox.xml" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="Mono.Android" />
+    <Reference Include="Mono.Android.Export" />
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+    <Reference Include="System.Xml" />
+    <Reference Include="System.Xml.Linq" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Newtonsoft.Json">
+      <Version>13.0.3</Version>
+    </PackageReference>
+    <PackageReference Include="HtmlAgilityPack">
+      <Version>1.11.61</Version>
+    </PackageReference>
+    <PackageReference Include="Fizzler.Systems.HtmlAgilityPack">
+      <Version>1.2.1</Version>
+    </PackageReference>
+    <PackageReference Include="Jint">
+      <Version>3.1.2</Version>
+    </PackageReference>
+    <PackageReference Include="ZXing.Net" Version="0.16.11" />
+    <PackageReference Include="Xamarin.AndroidX.AppCompat" Version="1.6.1" />
+    <PackageReference Include="Xamarin.AndroidX.Core">
+      <Version>1.9.0</Version>
+    </PackageReference>
+    <PackageReference Include="Xamarin.Google.Android.Material" Version="1.0.0.1" />
+    <PackageReference Include="Xamarin.Essentials" Version="1.6.1" />
+    <!-- 引擎二：经典 Xamarin.Android 的 ExoPlayer 2.x 绑定（硬件解码 / HLS 首选，参考 C:\root\code\TV 的 Media3 逻辑）。
+         注意：本项目是经典 Xamarin.Android（monoandroid13.0），Media3 包已不支持 monoandroid；
+         ExoPlayer 2.19.1 也只支持 net6/net7，故固定到最后一个仍支持 monoandroid 的 2.16.1。 -->
+    <PackageReference Include="Xam.Plugins.Android.ExoPlayer.Core" Version="2.16.1" />
+    <PackageReference Include="Xam.Plugins.Android.ExoPlayer.DataSource" Version="2.16.1" />
+    <PackageReference Include="Xam.Plugins.Android.ExoPlayer.Hls" Version="2.16.1" />
+    <PackageReference Include="Xam.Plugins.Android.ExoPlayer.UI" Version="2.16.1" />
+    <PackageReference Include="Xam.Plugins.Android.ExoPlayer.Database" Version="2.16.1" />
+  </ItemGroup>
+  <ItemGroup>
+    <AndroidAsset Include="Assets\www\index.html" />
+    <AndroidAsset Include="Assets\camera\index.html" />
+    <AndroidAsset Include="Assets\cert\mchat.pfx" />
+    <AndroidAsset Include="Assets\user_scripts\news_pdf.js" />
+    <AndroidAsset Include="Assets\www\css\app.css" />
+    <AndroidAsset Include="Assets\www\js\bridge.js" />
+    <AndroidAsset Include="Assets\www\js\icons.js" />
+    <AndroidAsset Include="Assets\www\js\media.js" />
+    <AndroidAsset Include="Assets\www\js\remote-media.js" />
+    <AndroidAsset Include="Assets\www\js\i18n.js" />
+    <AndroidAsset Include="Assets\www\js\chat.js" />
+    <AndroidAsset Include="Assets\www\js\browser.js" />
+    <AndroidAsset Include="Assets\www\js\floatpanel.js" />
+    <AndroidAsset Include="Assets\www\js\tools.js" />
+    <AndroidAsset Include="Assets\www\js\app.js" />
+    <AndroidAsset Include="Assets\www\gps.html" />
+    <AndroidAsset Include="Assets\www\js\gps.js" />
+    <AndroidAsset Include="Assets\www\settings.html" />
+    <AndroidAsset Include="Assets\www\offline.html" />
+    <AndroidAsset Include="Assets\www\manifest.json" />
+    <AndroidAsset Include="Assets\www\sw.js" />
+    <AndroidAsset Include="Assets\www\js\settings.js" />
+    <!-- 阅读模块（融合 legado：本地阅读 + 书源引擎，离线可用） -->
+    <AndroidAsset Include="Assets\www\reader\index.html" />
+    <AndroidAsset Include="Assets\www\reader\reader.css" />
+    <AndroidAsset Include="Assets\www\reader\store.js" />
+    <AndroidAsset Include="Assets\www\reader\parser.js" />
+    <AndroidAsset Include="Assets\www\reader\booksource.js" />
+    <AndroidAsset Include="Assets\www\reader\default-sources.js" />
+    <AndroidAsset Include="Assets\www\reader\app.js" />
+    <!-- 网页版聊天界面（由内置 HTTP 服务对局域网浏览器提供） -->
+    <AndroidAsset Include="Assets\webui\index.html" />
+    <AndroidAsset Include="Assets\webui\css\web.css" />
+    <AndroidAsset Include="Assets\webui\js\web.js" />
+    <AndroidAsset Include="Assets\webui\js\icons.js" Link="webui\js\icons.js" />
+    <AndroidAsset Include="Assets\webui\js\i18n.js" Link="webui\js\i18n.js" />
+    <AndroidAsset Include="Assets\webui\gps.html" Link="webui\gps.html" />
+    <AndroidAsset Include="Assets\webui\js\gps.js" Link="webui\js\gps.js" />
+    <AndroidAsset Include="Assets\webui\settings.html" Link="webui\settings.html" />
+    <AndroidAsset Include="Assets\webui\js\settings.js" Link="webui\js\settings.js" />
+    <!-- DNS VPN 管理控制台（/dns） -->
+    <AndroidAsset Include="Assets\webui\dns.html" Link="webui\dns.html" />
+    <AndroidAsset Include="Assets\webui\js\dns.js" Link="webui\js\dns.js" />
+    <!-- 局域网网页文件共享页面（访客通过 http://<手机IP>:6789/share 访问） -->
+    <AndroidAsset Include="Assets\webui\share.html" />
+    <!-- 网页端阅读器（http://<手机IP>:6789/reader，与 App 共用书架与进度） -->
+    <AndroidAsset Include="Assets\webui\reader.html" Link="webui\reader.html" />
+    <AndroidAsset Include="Assets\webui\css\reader.css" Link="webui\css\reader.css" />
+    <AndroidAsset Include="Assets\webui\js\reader.js" Link="webui\js\reader.js" />
+    <!-- 网页端影音库（http://<手机IP>:6789/media，与 App 共用曲库/歌单/喜欢） -->
+    <AndroidAsset Include="Assets\webui\media.html" Link="webui\media.html" />
+    <AndroidAsset Include="Assets\webui\css\media.css" Link="webui\css\media.css" />
+    <AndroidAsset Include="Assets\webui\js\media.js" Link="webui\js\media.js" />
+    <!-- 拼音首字母表（A-Z 索引），须在 media.js 之前加载 -->
+    <AndroidAsset Include="Assets\webui\js\pinyin.js" Link="webui\js\pinyin.js" />
+    <!-- 在线音源默认配置（念心音源兼容解析版），运行时首次拷贝到 files/music/onlinesource.json 供编辑 -->
+    <AndroidAsset Include="Assets\webui\sources\onlinesource.json" Link="webui\sources\onlinesource.json" />
+    <!-- 在线影视：网页端脚本 / hls.js（本地化，离线可用）/ 默认多渠道配置 -->
+    <AndroidAsset Include="Assets\webui\js\vod.js" Link="webui\js\vod.js" />
+    <AndroidAsset Include="Assets\webui\js\hls.min.js" Link="webui\js\hls.min.js" />
+    <AndroidAsset Include="Assets\webui\sources\onlinevod.json" Link="webui\sources\onlinevod.json" />
+  </ItemGroup>
+  <ItemGroup>
+    <AndroidResource Include="Resources\layout\dialog_bluetooth_device.xml">
+      <SubType>Designer</SubType>
+    </AndroidResource>
+  </ItemGroup>
+  <ItemGroup>
+    <AndroidResource Include="Resources\layout\item_bluetooth_device.xml">
+      <SubType>Designer</SubType>
+    </AndroidResource>
+  </ItemGroup>
+  <ItemGroup>
+    <AndroidResource Include="Resources\drawable\ic_bluetooth.xml">
+      <SubType>Designer</SubType>
+    </AndroidResource>
+  </ItemGroup>
+  <ItemGroup>
+    <AndroidResource Include="Resources\drawable\ic_bluetooth_device.xml">
+      <SubType>Designer</SubType>
+    </AndroidResource>
+  </ItemGroup>
+  <ItemGroup>
+    <AndroidResource Include="Resources\drawable\ic_signal_low.xml">
+      <SubType>Designer</SubType>
+    </AndroidResource>
+  </ItemGroup>
+  <ItemGroup>
+    <AndroidResource Include="Resources\drawable\ic_signal_medium.xml">
+      <SubType>Designer</SubType>
+    </AndroidResource>
+  </ItemGroup>
+  <ItemGroup>
+    <AndroidResource Include="Resources\drawable\ic_signal_high.xml">
+      <SubType>Designer</SubType>
+    </AndroidResource>
+  </ItemGroup>
+  <ItemGroup>
+    <!-- 悬浮窗图形资源 -->
+    <AndroidResource Include="Resources\drawable\floating_bg.xml">
+      <SubType>Designer</SubType>
+    </AndroidResource>
+    <AndroidResource Include="Resources\drawable\floating_badge.xml">
+      <SubType>Designer</SubType>
+    </AndroidResource>
+    <AndroidResource Include="Resources\drawable\floating_input_bg.xml">
+      <SubType>Designer</SubType>
+    </AndroidResource>
+    <AndroidResource Include="Resources\drawable\floating_send_bg.xml">
+      <SubType>Designer</SubType>
+    </AndroidResource>
+    <AndroidResource Include="Resources\drawable\floating_key_bg.xml">
+      <SubType>Designer</SubType>
+    </AndroidResource>
+    <AndroidResource Include="Resources\drawable\ic_pen.xml">
+      <SubType>Designer</SubType>
+    </AndroidResource>
+    <AndroidResource Include="Resources\drawable\ic_eraser.xml">
+      <SubType>Designer</SubType>
+    </AndroidResource>
+    <AndroidResource Include="Resources\drawable\ic_bucket.xml">
+      <SubType>Designer</SubType>
+    </AndroidResource>
+    <AndroidResource Include="Resources\drawable\ic_close.xml">
+      <SubType>Designer</SubType>
+    </AndroidResource>
+    <AndroidResource Include="Resources\drawable\ic_chevron.xml">
+      <SubType>Designer</SubType>
+    </AndroidResource>
+    <AndroidResource Include="Resources\drawable\ic_phone.xml">
+      <SubType>Designer</SubType>
+    </AndroidResource>
+    <AndroidResource Include="Resources\drawable\screen_bar_bg.xml">
+      <SubType>Designer</SubType>
+    </AndroidResource>
+    <AndroidResource Include="Resources\drawable\screen_tool_active.xml">
+      <SubType>Designer</SubType>
+    </AndroidResource>
+    <AndroidResource Include="Resources\xml\mchat_file_paths.xml" />
+    <AndroidResource Include="Resources\xml\rd_accessibility_config.xml" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- 注意：Xamarin.Android 不支持 @(Content) 构建动作（会导致 XA0101 且 aapt2 打包 assets 失败、APK 无法生成）。
+         www 下的脚本必须统一用 @(AndroidAsset)。 -->
+    <AndroidAsset Include="Assets\www\bt-polyfill.js" />
+    <AndroidAsset Include="Assets\www\js\bt-chooser.js" />
+    <AndroidResource Include="Resources\drawable\icon.png" />
+  </ItemGroup>
+  <!-- 修正 APK 内 assets 路径：本机 MSBuild 将 @(AndroidAsset) 的 Include 解析为绝对路径，
+       导致 MonoAndroidAssetsPrefix(Assets) 无法在路径开头匹配、未被剥离，assets 被打包到
+       assets/root/code/LanChat/Assets/...（含完整工程路径）。运行时 assets.List("www") 返回
+       null、解压目录为空，首屏 / 请求返回 404。显式 Link 强制 APK 内路径为 assets/<相对路径>。 -->
+  <ItemGroup>
+    <AndroidAsset Update="Assets\www\index.html" Link="www\index.html" />
+    <AndroidAsset Update="Assets\www\css\app.css" Link="www\css\app.css" />
+    <AndroidAsset Update="Assets\www\js\bridge.js" Link="www\js\bridge.js" />
+    <AndroidAsset Update="Assets\www\js\media.js" Link="www\js\media.js" />
+    <AndroidAsset Update="Assets\www\js\remote-media.js" Link="www\js\remote-media.js" />
+    <AndroidAsset Update="Assets\www\js\chat.js" Link="www\js\chat.js" />
+    <AndroidAsset Update="Assets\www\js\browser.js" Link="www\js\browser.js" />
+    <AndroidAsset Update="Assets\www\js\floatpanel.js" Link="www\js\floatpanel.js" />
+    <AndroidAsset Update="Assets\www\js\tools.js" Link="www\js\tools.js" />
+    <AndroidAsset Update="Assets\www\js\app.js" Link="www\js\app.js" />
+    <AndroidAsset Update="Assets\www\gps.html" Link="www\gps.html" />
+    <AndroidAsset Update="Assets\www\js\gps.js" Link="www\js\gps.js" />
+    <AndroidAsset Update="Assets\www\settings.html" Link="www\settings.html" />
+    <AndroidAsset Update="Assets\www\js\settings.js" Link="www\js\settings.js" />
+    <AndroidAsset Update="Assets\www\bt-polyfill.js" Link="www\bt-polyfill.js" />
+    <AndroidAsset Update="Assets\user_scripts\news_pdf.js" Link="user_scripts\news_pdf.js" />
+    <AndroidAsset Update="Assets\www\js\bt-chooser.js" Link="www\js\bt-chooser.js" />
+    <!-- 阅读模块：修正 APK 内 assets 路径（同上，强制为 assets/www/reader/...） -->
+    <AndroidAsset Update="Assets\www\reader\index.html" Link="www\reader\index.html" />
+    <AndroidAsset Update="Assets\www\reader\reader.css" Link="www\reader\reader.css" />
+    <AndroidAsset Update="Assets\www\reader\store.js" Link="www\reader\store.js" />
+    <AndroidAsset Update="Assets\www\reader\parser.js" Link="www\reader\parser.js" />
+    <AndroidAsset Update="Assets\www\reader\booksource.js" Link="www\reader\booksource.js" />
+    <AndroidAsset Update="Assets\www\reader\default-sources.js" Link="www\reader\default-sources.js" />
+    <AndroidAsset Update="Assets\www\reader\app.js" Link="www\reader\app.js" />
+    <AndroidAsset Update="Assets\webui\index.html" Link="webui\index.html" />
+    <AndroidAsset Update="Assets\webui\css\web.css" Link="webui\css\web.css" />
+    <AndroidAsset Update="Assets\webui\js\web.js" Link="webui\js\web.js" />
+    <AndroidAsset Update="Assets\webui\share.html" Link="webui\share.html" />
+    <AndroidAsset Update="Assets\webui\gps.html" Link="webui\gps.html" />
+    <AndroidAsset Update="Assets\webui\js\gps.js" Link="webui\js\gps.js" />
+    <AndroidAsset Update="Assets\webui\settings.html" Link="webui\settings.html" />
+    <AndroidAsset Update="Assets\webui\js\settings.js" Link="webui\js\settings.js" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Office 文档预览资源（docx-preview / SheetJS / PPTXjs，源自 gander-2.10，纯前端解析 OOXML）。
+         沿用资源 Link 强制写法：本机 MSBuild 会把 Include 解析为绝对路径，不写 Link 会被 aapt2 打成 assets/root/code/... 无法访问。
+         RecursiveDir 保留 lib/pptx/ 等子目录结构。 -->
+    <AndroidAsset Include="Assets\viewer\**\*">
+      <Link>viewer\%(RecursiveDir)%(Filename)%(Extension)</Link>
+    </AndroidAsset>
+  </ItemGroup>
+
+  <Import Project="$(MSBuildExtensionsPath)\Xamarin\Android\Xamarin.Android.CSharp.targets" />
+  <!-- To modify your build process, add your task inside one of the targets below and uncomment it.
+    Other similar extension points exist, see Microsoft.Common.targets.
+    <Target Name="BeforeBuild">
+    </Target>
+    <Target Name="AfterBuild">
+    </Target>
+  -->
+  <!-- 预览查看器资源（整合自 C://root//SYNC//web//view）与预览分发页；
+       沿用本工程已验证的 Link 强制 APK 内路径写法，规避绝对路径泄漏。 -->
+  <ItemGroup>
+    <AndroidAsset Include="Assets\webui\preview.html" Link="webui\preview.html" />
+    <AndroidAsset Include="Assets\webui\static\js\html2canvas.min.js" Link="webui\static\js\html2canvas.min.js" />
+    <AndroidAsset Include="Assets\webui\static\js\xlsx.full.min.js" Link="webui\static\js\xlsx.full.min.js" />
+    <AndroidAsset Include="Assets\webui\view\3d\3dviewer_net_favicon.ico" Link="webui\view\3d\3dviewer_net_favicon.ico" />
+    <AndroidAsset Include="Assets\webui\view\3d\3dviewer_net_logo.svg" Link="webui\view\3d\3dviewer_net_logo.svg" />
+    <AndroidAsset Include="Assets\webui\view\3d\3dviewer_net_logo_text.svg" Link="webui\view\3d\3dviewer_net_logo_text.svg" />
+    <AndroidAsset Include="Assets\webui\view\3d\MIT Licence" Link="webui\view\3d\MIT Licence" />
+    <AndroidAsset Include="Assets\webui\view\3d\O3DVIcons-2DDY3NID.woff" Link="webui\view\3d\O3DVIcons-2DDY3NID.woff" />
+    <AndroidAsset Include="Assets\webui\view\3d\Quicksand-Regular-K32YVORR.ttf" Link="webui\view\3d\Quicksand-Regular-K32YVORR.ttf" />
+    <AndroidAsset Include="Assets\webui\view\3d\index.html" Link="webui\view\3d\index.html" />
+    <AndroidAsset Include="Assets\webui\view\3d\o3dv.website.min.css" Link="webui\view\3d\o3dv.website.min.css" />
+    <AndroidAsset Include="Assets\webui\view\3d\o3dv.website.min.js" Link="webui\view\3d\o3dv.website.min.js" />
+    <AndroidAsset Include="Assets\webui\view\3d\print3d.js" Link="webui\view\3d\print3d.js" />
+    <AndroidAsset Include="Assets\webui\view\3d\3d_links.txt" Link="webui\view\3d\3d_links.txt" />
+    <AndroidAsset Include="Assets\webui\view\404.html" Link="webui\view\404.html" />
+    <AndroidAsset Include="Assets\webui\view\file.html" Link="webui\view\file.html" />
+    <AndroidAsset Include="Assets\webui\view\jszip.min.js" Link="webui\view\jszip.min.js" />
+    <AndroidAsset Include="Assets\webui\view\lession.html" Link="webui\view\lession.html" />
+    <AndroidAsset Include="Assets\webui\view\mht.html" Link="webui\view\mht.html" />
+    <AndroidAsset Include="Assets\webui\view\music.html" Link="webui\view\music.html" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\78-EUC-H.bcmap" Link="webui\view\pdf\cmaps\78-EUC-H.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\78-EUC-V.bcmap" Link="webui\view\pdf\cmaps\78-EUC-V.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\78-H.bcmap" Link="webui\view\pdf\cmaps\78-H.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\78-RKSJ-H.bcmap" Link="webui\view\pdf\cmaps\78-RKSJ-H.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\78-RKSJ-V.bcmap" Link="webui\view\pdf\cmaps\78-RKSJ-V.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\78-V.bcmap" Link="webui\view\pdf\cmaps\78-V.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\78ms-RKSJ-H.bcmap" Link="webui\view\pdf\cmaps\78ms-RKSJ-H.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\78ms-RKSJ-V.bcmap" Link="webui\view\pdf\cmaps\78ms-RKSJ-V.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\83pv-RKSJ-H.bcmap" Link="webui\view\pdf\cmaps\83pv-RKSJ-H.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\90ms-RKSJ-H.bcmap" Link="webui\view\pdf\cmaps\90ms-RKSJ-H.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\90ms-RKSJ-V.bcmap" Link="webui\view\pdf\cmaps\90ms-RKSJ-V.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\90msp-RKSJ-H.bcmap" Link="webui\view\pdf\cmaps\90msp-RKSJ-H.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\90msp-RKSJ-V.bcmap" Link="webui\view\pdf\cmaps\90msp-RKSJ-V.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\90pv-RKSJ-H.bcmap" Link="webui\view\pdf\cmaps\90pv-RKSJ-H.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\90pv-RKSJ-V.bcmap" Link="webui\view\pdf\cmaps\90pv-RKSJ-V.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\Add-H.bcmap" Link="webui\view\pdf\cmaps\Add-H.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\Add-RKSJ-H.bcmap" Link="webui\view\pdf\cmaps\Add-RKSJ-H.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\Add-RKSJ-V.bcmap" Link="webui\view\pdf\cmaps\Add-RKSJ-V.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\Add-V.bcmap" Link="webui\view\pdf\cmaps\Add-V.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\Adobe-CNS1-0.bcmap" Link="webui\view\pdf\cmaps\Adobe-CNS1-0.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\Adobe-CNS1-1.bcmap" Link="webui\view\pdf\cmaps\Adobe-CNS1-1.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\Adobe-CNS1-2.bcmap" Link="webui\view\pdf\cmaps\Adobe-CNS1-2.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\Adobe-CNS1-3.bcmap" Link="webui\view\pdf\cmaps\Adobe-CNS1-3.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\Adobe-CNS1-4.bcmap" Link="webui\view\pdf\cmaps\Adobe-CNS1-4.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\Adobe-CNS1-5.bcmap" Link="webui\view\pdf\cmaps\Adobe-CNS1-5.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\Adobe-CNS1-6.bcmap" Link="webui\view\pdf\cmaps\Adobe-CNS1-6.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\Adobe-CNS1-UCS2.bcmap" Link="webui\view\pdf\cmaps\Adobe-CNS1-UCS2.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\Adobe-GB1-0.bcmap" Link="webui\view\pdf\cmaps\Adobe-GB1-0.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\Adobe-GB1-1.bcmap" Link="webui\view\pdf\cmaps\Adobe-GB1-1.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\Adobe-GB1-2.bcmap" Link="webui\view\pdf\cmaps\Adobe-GB1-2.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\Adobe-GB1-3.bcmap" Link="webui\view\pdf\cmaps\Adobe-GB1-3.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\Adobe-GB1-4.bcmap" Link="webui\view\pdf\cmaps\Adobe-GB1-4.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\Adobe-GB1-5.bcmap" Link="webui\view\pdf\cmaps\Adobe-GB1-5.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\Adobe-GB1-UCS2.bcmap" Link="webui\view\pdf\cmaps\Adobe-GB1-UCS2.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\Adobe-Japan1-0.bcmap" Link="webui\view\pdf\cmaps\Adobe-Japan1-0.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\Adobe-Japan1-1.bcmap" Link="webui\view\pdf\cmaps\Adobe-Japan1-1.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\Adobe-Japan1-2.bcmap" Link="webui\view\pdf\cmaps\Adobe-Japan1-2.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\Adobe-Japan1-3.bcmap" Link="webui\view\pdf\cmaps\Adobe-Japan1-3.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\Adobe-Japan1-4.bcmap" Link="webui\view\pdf\cmaps\Adobe-Japan1-4.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\Adobe-Japan1-5.bcmap" Link="webui\view\pdf\cmaps\Adobe-Japan1-5.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\Adobe-Japan1-6.bcmap" Link="webui\view\pdf\cmaps\Adobe-Japan1-6.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\Adobe-Japan1-UCS2.bcmap" Link="webui\view\pdf\cmaps\Adobe-Japan1-UCS2.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\Adobe-Korea1-0.bcmap" Link="webui\view\pdf\cmaps\Adobe-Korea1-0.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\Adobe-Korea1-1.bcmap" Link="webui\view\pdf\cmaps\Adobe-Korea1-1.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\Adobe-Korea1-2.bcmap" Link="webui\view\pdf\cmaps\Adobe-Korea1-2.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\Adobe-Korea1-UCS2.bcmap" Link="webui\view\pdf\cmaps\Adobe-Korea1-UCS2.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\B5-H.bcmap" Link="webui\view\pdf\cmaps\B5-H.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\B5-V.bcmap" Link="webui\view\pdf\cmaps\B5-V.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\B5pc-H.bcmap" Link="webui\view\pdf\cmaps\B5pc-H.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\B5pc-V.bcmap" Link="webui\view\pdf\cmaps\B5pc-V.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\CNS-EUC-H.bcmap" Link="webui\view\pdf\cmaps\CNS-EUC-H.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\CNS-EUC-V.bcmap" Link="webui\view\pdf\cmaps\CNS-EUC-V.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\CNS1-H.bcmap" Link="webui\view\pdf\cmaps\CNS1-H.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\CNS1-V.bcmap" Link="webui\view\pdf\cmaps\CNS1-V.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\CNS2-H.bcmap" Link="webui\view\pdf\cmaps\CNS2-H.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\CNS2-V.bcmap" Link="webui\view\pdf\cmaps\CNS2-V.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\ETHK-B5-H.bcmap" Link="webui\view\pdf\cmaps\ETHK-B5-H.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\ETHK-B5-V.bcmap" Link="webui\view\pdf\cmaps\ETHK-B5-V.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\ETen-B5-H.bcmap" Link="webui\view\pdf\cmaps\ETen-B5-H.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\ETen-B5-V.bcmap" Link="webui\view\pdf\cmaps\ETen-B5-V.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\ETenms-B5-H.bcmap" Link="webui\view\pdf\cmaps\ETenms-B5-H.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\ETenms-B5-V.bcmap" Link="webui\view\pdf\cmaps\ETenms-B5-V.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\EUC-H.bcmap" Link="webui\view\pdf\cmaps\EUC-H.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\EUC-V.bcmap" Link="webui\view\pdf\cmaps\EUC-V.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\Ext-H.bcmap" Link="webui\view\pdf\cmaps\Ext-H.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\Ext-RKSJ-H.bcmap" Link="webui\view\pdf\cmaps\Ext-RKSJ-H.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\Ext-RKSJ-V.bcmap" Link="webui\view\pdf\cmaps\Ext-RKSJ-V.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\Ext-V.bcmap" Link="webui\view\pdf\cmaps\Ext-V.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\GB-EUC-H.bcmap" Link="webui\view\pdf\cmaps\GB-EUC-H.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\GB-EUC-V.bcmap" Link="webui\view\pdf\cmaps\GB-EUC-V.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\GB-H.bcmap" Link="webui\view\pdf\cmaps\GB-H.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\GB-V.bcmap" Link="webui\view\pdf\cmaps\GB-V.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\GBK-EUC-H.bcmap" Link="webui\view\pdf\cmaps\GBK-EUC-H.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\GBK-EUC-V.bcmap" Link="webui\view\pdf\cmaps\GBK-EUC-V.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\GBK2K-H.bcmap" Link="webui\view\pdf\cmaps\GBK2K-H.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\GBK2K-V.bcmap" Link="webui\view\pdf\cmaps\GBK2K-V.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\GBKp-EUC-H.bcmap" Link="webui\view\pdf\cmaps\GBKp-EUC-H.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\GBKp-EUC-V.bcmap" Link="webui\view\pdf\cmaps\GBKp-EUC-V.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\GBT-EUC-H.bcmap" Link="webui\view\pdf\cmaps\GBT-EUC-H.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\GBT-EUC-V.bcmap" Link="webui\view\pdf\cmaps\GBT-EUC-V.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\GBT-H.bcmap" Link="webui\view\pdf\cmaps\GBT-H.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\GBT-V.bcmap" Link="webui\view\pdf\cmaps\GBT-V.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\GBTpc-EUC-H.bcmap" Link="webui\view\pdf\cmaps\GBTpc-EUC-H.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\GBTpc-EUC-V.bcmap" Link="webui\view\pdf\cmaps\GBTpc-EUC-V.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\GBpc-EUC-H.bcmap" Link="webui\view\pdf\cmaps\GBpc-EUC-H.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\GBpc-EUC-V.bcmap" Link="webui\view\pdf\cmaps\GBpc-EUC-V.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\H.bcmap" Link="webui\view\pdf\cmaps\H.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\HKdla-B5-H.bcmap" Link="webui\view\pdf\cmaps\HKdla-B5-H.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\HKdla-B5-V.bcmap" Link="webui\view\pdf\cmaps\HKdla-B5-V.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\HKdlb-B5-H.bcmap" Link="webui\view\pdf\cmaps\HKdlb-B5-H.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\HKdlb-B5-V.bcmap" Link="webui\view\pdf\cmaps\HKdlb-B5-V.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\HKgccs-B5-H.bcmap" Link="webui\view\pdf\cmaps\HKgccs-B5-H.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\HKgccs-B5-V.bcmap" Link="webui\view\pdf\cmaps\HKgccs-B5-V.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\HKm314-B5-H.bcmap" Link="webui\view\pdf\cmaps\HKm314-B5-H.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\HKm314-B5-V.bcmap" Link="webui\view\pdf\cmaps\HKm314-B5-V.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\HKm471-B5-H.bcmap" Link="webui\view\pdf\cmaps\HKm471-B5-H.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\HKm471-B5-V.bcmap" Link="webui\view\pdf\cmaps\HKm471-B5-V.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\HKscs-B5-H.bcmap" Link="webui\view\pdf\cmaps\HKscs-B5-H.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\HKscs-B5-V.bcmap" Link="webui\view\pdf\cmaps\HKscs-B5-V.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\Hankaku.bcmap" Link="webui\view\pdf\cmaps\Hankaku.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\Hiragana.bcmap" Link="webui\view\pdf\cmaps\Hiragana.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\KSC-EUC-H.bcmap" Link="webui\view\pdf\cmaps\KSC-EUC-H.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\KSC-EUC-V.bcmap" Link="webui\view\pdf\cmaps\KSC-EUC-V.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\KSC-H.bcmap" Link="webui\view\pdf\cmaps\KSC-H.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\KSC-Johab-H.bcmap" Link="webui\view\pdf\cmaps\KSC-Johab-H.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\KSC-Johab-V.bcmap" Link="webui\view\pdf\cmaps\KSC-Johab-V.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\KSC-V.bcmap" Link="webui\view\pdf\cmaps\KSC-V.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\KSCms-UHC-H.bcmap" Link="webui\view\pdf\cmaps\KSCms-UHC-H.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\KSCms-UHC-HW-H.bcmap" Link="webui\view\pdf\cmaps\KSCms-UHC-HW-H.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\KSCms-UHC-HW-V.bcmap" Link="webui\view\pdf\cmaps\KSCms-UHC-HW-V.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\KSCms-UHC-V.bcmap" Link="webui\view\pdf\cmaps\KSCms-UHC-V.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\KSCpc-EUC-H.bcmap" Link="webui\view\pdf\cmaps\KSCpc-EUC-H.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\KSCpc-EUC-V.bcmap" Link="webui\view\pdf\cmaps\KSCpc-EUC-V.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\Katakana.bcmap" Link="webui\view\pdf\cmaps\Katakana.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\LICENSE" Link="webui\view\pdf\cmaps\LICENSE" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\NWP-H.bcmap" Link="webui\view\pdf\cmaps\NWP-H.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\NWP-V.bcmap" Link="webui\view\pdf\cmaps\NWP-V.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\RKSJ-H.bcmap" Link="webui\view\pdf\cmaps\RKSJ-H.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\RKSJ-V.bcmap" Link="webui\view\pdf\cmaps\RKSJ-V.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\Roman.bcmap" Link="webui\view\pdf\cmaps\Roman.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\UniCNS-UCS2-H.bcmap" Link="webui\view\pdf\cmaps\UniCNS-UCS2-H.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\UniCNS-UCS2-V.bcmap" Link="webui\view\pdf\cmaps\UniCNS-UCS2-V.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\UniCNS-UTF16-H.bcmap" Link="webui\view\pdf\cmaps\UniCNS-UTF16-H.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\UniCNS-UTF16-V.bcmap" Link="webui\view\pdf\cmaps\UniCNS-UTF16-V.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\UniCNS-UTF32-H.bcmap" Link="webui\view\pdf\cmaps\UniCNS-UTF32-H.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\UniCNS-UTF32-V.bcmap" Link="webui\view\pdf\cmaps\UniCNS-UTF32-V.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\UniCNS-UTF8-H.bcmap" Link="webui\view\pdf\cmaps\UniCNS-UTF8-H.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\UniCNS-UTF8-V.bcmap" Link="webui\view\pdf\cmaps\UniCNS-UTF8-V.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\UniGB-UCS2-H.bcmap" Link="webui\view\pdf\cmaps\UniGB-UCS2-H.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\UniGB-UCS2-V.bcmap" Link="webui\view\pdf\cmaps\UniGB-UCS2-V.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\UniGB-UTF16-H.bcmap" Link="webui\view\pdf\cmaps\UniGB-UTF16-H.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\UniGB-UTF16-V.bcmap" Link="webui\view\pdf\cmaps\UniGB-UTF16-V.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\UniGB-UTF32-H.bcmap" Link="webui\view\pdf\cmaps\UniGB-UTF32-H.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\UniGB-UTF32-V.bcmap" Link="webui\view\pdf\cmaps\UniGB-UTF32-V.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\UniGB-UTF8-H.bcmap" Link="webui\view\pdf\cmaps\UniGB-UTF8-H.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\UniGB-UTF8-V.bcmap" Link="webui\view\pdf\cmaps\UniGB-UTF8-V.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\UniJIS-UCS2-H.bcmap" Link="webui\view\pdf\cmaps\UniJIS-UCS2-H.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\UniJIS-UCS2-HW-H.bcmap" Link="webui\view\pdf\cmaps\UniJIS-UCS2-HW-H.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\UniJIS-UCS2-HW-V.bcmap" Link="webui\view\pdf\cmaps\UniJIS-UCS2-HW-V.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\UniJIS-UCS2-V.bcmap" Link="webui\view\pdf\cmaps\UniJIS-UCS2-V.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\UniJIS-UTF16-H.bcmap" Link="webui\view\pdf\cmaps\UniJIS-UTF16-H.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\UniJIS-UTF16-V.bcmap" Link="webui\view\pdf\cmaps\UniJIS-UTF16-V.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\UniJIS-UTF32-H.bcmap" Link="webui\view\pdf\cmaps\UniJIS-UTF32-H.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\UniJIS-UTF32-V.bcmap" Link="webui\view\pdf\cmaps\UniJIS-UTF32-V.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\UniJIS-UTF8-H.bcmap" Link="webui\view\pdf\cmaps\UniJIS-UTF8-H.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\UniJIS-UTF8-V.bcmap" Link="webui\view\pdf\cmaps\UniJIS-UTF8-V.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\UniJIS2004-UTF16-H.bcmap" Link="webui\view\pdf\cmaps\UniJIS2004-UTF16-H.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\UniJIS2004-UTF16-V.bcmap" Link="webui\view\pdf\cmaps\UniJIS2004-UTF16-V.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\UniJIS2004-UTF32-H.bcmap" Link="webui\view\pdf\cmaps\UniJIS2004-UTF32-H.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\UniJIS2004-UTF32-V.bcmap" Link="webui\view\pdf\cmaps\UniJIS2004-UTF32-V.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\UniJIS2004-UTF8-H.bcmap" Link="webui\view\pdf\cmaps\UniJIS2004-UTF8-H.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\UniJIS2004-UTF8-V.bcmap" Link="webui\view\pdf\cmaps\UniJIS2004-UTF8-V.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\UniJISPro-UCS2-HW-V.bcmap" Link="webui\view\pdf\cmaps\UniJISPro-UCS2-HW-V.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\UniJISPro-UCS2-V.bcmap" Link="webui\view\pdf\cmaps\UniJISPro-UCS2-V.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\UniJISPro-UTF8-V.bcmap" Link="webui\view\pdf\cmaps\UniJISPro-UTF8-V.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\UniJISX0213-UTF32-H.bcmap" Link="webui\view\pdf\cmaps\UniJISX0213-UTF32-H.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\UniJISX0213-UTF32-V.bcmap" Link="webui\view\pdf\cmaps\UniJISX0213-UTF32-V.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\UniJISX02132004-UTF32-H.bcmap" Link="webui\view\pdf\cmaps\UniJISX02132004-UTF32-H.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\UniJISX02132004-UTF32-V.bcmap" Link="webui\view\pdf\cmaps\UniJISX02132004-UTF32-V.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\UniKS-UCS2-H.bcmap" Link="webui\view\pdf\cmaps\UniKS-UCS2-H.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\UniKS-UCS2-V.bcmap" Link="webui\view\pdf\cmaps\UniKS-UCS2-V.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\UniKS-UTF16-H.bcmap" Link="webui\view\pdf\cmaps\UniKS-UTF16-H.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\UniKS-UTF16-V.bcmap" Link="webui\view\pdf\cmaps\UniKS-UTF16-V.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\UniKS-UTF32-H.bcmap" Link="webui\view\pdf\cmaps\UniKS-UTF32-H.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\UniKS-UTF32-V.bcmap" Link="webui\view\pdf\cmaps\UniKS-UTF32-V.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\UniKS-UTF8-H.bcmap" Link="webui\view\pdf\cmaps\UniKS-UTF8-H.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\UniKS-UTF8-V.bcmap" Link="webui\view\pdf\cmaps\UniKS-UTF8-V.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\V.bcmap" Link="webui\view\pdf\cmaps\V.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\cmaps\WP-Symbol.bcmap" Link="webui\view\pdf\cmaps\WP-Symbol.bcmap" />
+    <AndroidAsset Include="Assets\webui\view\pdf\images\altText_add.svg" Link="webui\view\pdf\images\altText_add.svg" />
+    <AndroidAsset Include="Assets\webui\view\pdf\images\altText_disclaimer.svg" Link="webui\view\pdf\images\altText_disclaimer.svg" />
+    <AndroidAsset Include="Assets\webui\view\pdf\images\altText_done.svg" Link="webui\view\pdf\images\altText_done.svg" />
+    <AndroidAsset Include="Assets\webui\view\pdf\images\altText_spinner.svg" Link="webui\view\pdf\images\altText_spinner.svg" />
+    <AndroidAsset Include="Assets\webui\view\pdf\images\altText_warning.svg" Link="webui\view\pdf\images\altText_warning.svg" />
+    <AndroidAsset Include="Assets\webui\view\pdf\images\annotation-check.svg" Link="webui\view\pdf\images\annotation-check.svg" />
+    <AndroidAsset Include="Assets\webui\view\pdf\images\annotation-comment.svg" Link="webui\view\pdf\images\annotation-comment.svg" />
+    <AndroidAsset Include="Assets\webui\view\pdf\images\annotation-help.svg" Link="webui\view\pdf\images\annotation-help.svg" />
+    <AndroidAsset Include="Assets\webui\view\pdf\images\annotation-insert.svg" Link="webui\view\pdf\images\annotation-insert.svg" />
+    <AndroidAsset Include="Assets\webui\view\pdf\images\annotation-key.svg" Link="webui\view\pdf\images\annotation-key.svg" />
+    <AndroidAsset Include="Assets\webui\view\pdf\images\annotation-newparagraph.svg" Link="webui\view\pdf\images\annotation-newparagraph.svg" />
+    <AndroidAsset Include="Assets\webui\view\pdf\images\annotation-noicon.svg" Link="webui\view\pdf\images\annotation-noicon.svg" />
+    <AndroidAsset Include="Assets\webui\view\pdf\images\annotation-note.svg" Link="webui\view\pdf\images\annotation-note.svg" />
+    <AndroidAsset Include="Assets\webui\view\pdf\images\annotation-paperclip.svg" Link="webui\view\pdf\images\annotation-paperclip.svg" />
+    <AndroidAsset Include="Assets\webui\view\pdf\images\annotation-paragraph.svg" Link="webui\view\pdf\images\annotation-paragraph.svg" />
+    <AndroidAsset Include="Assets\webui\view\pdf\images\annotation-pushpin.svg" Link="webui\view\pdf\images\annotation-pushpin.svg" />
+    <AndroidAsset Include="Assets\webui\view\pdf\images\cursor-editorFreeHighlight.svg" Link="webui\view\pdf\images\cursor-editorFreeHighlight.svg" />
+    <AndroidAsset Include="Assets\webui\view\pdf\images\cursor-editorFreeText.svg" Link="webui\view\pdf\images\cursor-editorFreeText.svg" />
+    <AndroidAsset Include="Assets\webui\view\pdf\images\cursor-editorInk.svg" Link="webui\view\pdf\images\cursor-editorInk.svg" />
+    <AndroidAsset Include="Assets\webui\view\pdf\images\cursor-editorTextHighlight.svg" Link="webui\view\pdf\images\cursor-editorTextHighlight.svg" />
+    <AndroidAsset Include="Assets\webui\view\pdf\images\editor-toolbar-delete.svg" Link="webui\view\pdf\images\editor-toolbar-delete.svg" />
+    <AndroidAsset Include="Assets\webui\view\pdf\images\findbarButton-next.svg" Link="webui\view\pdf\images\findbarButton-next.svg" />
+    <AndroidAsset Include="Assets\webui\view\pdf\images\findbarButton-previous.svg" Link="webui\view\pdf\images\findbarButton-previous.svg" />
+    <AndroidAsset Include="Assets\webui\view\pdf\images\gv-toolbarButton-download.svg" Link="webui\view\pdf\images\gv-toolbarButton-download.svg" />
+    <AndroidAsset Include="Assets\webui\view\pdf\images\loading-icon.gif" Link="webui\view\pdf\images\loading-icon.gif" />
+    <AndroidAsset Include="Assets\webui\view\pdf\images\loading.svg" Link="webui\view\pdf\images\loading.svg" />
+    <AndroidAsset Include="Assets\webui\view\pdf\images\messageBar_closingButton.svg" Link="webui\view\pdf\images\messageBar_closingButton.svg" />
+    <AndroidAsset Include="Assets\webui\view\pdf\images\messageBar_warning.svg" Link="webui\view\pdf\images\messageBar_warning.svg" />
+    <AndroidAsset Include="Assets\webui\view\pdf\images\secondaryToolbarButton-documentProperties.svg" Link="webui\view\pdf\images\secondaryToolbarButton-documentProperties.svg" />
+    <AndroidAsset Include="Assets\webui\view\pdf\images\secondaryToolbarButton-firstPage.svg" Link="webui\view\pdf\images\secondaryToolbarButton-firstPage.svg" />
+    <AndroidAsset Include="Assets\webui\view\pdf\images\secondaryToolbarButton-handTool.svg" Link="webui\view\pdf\images\secondaryToolbarButton-handTool.svg" />
+    <AndroidAsset Include="Assets\webui\view\pdf\images\secondaryToolbarButton-lastPage.svg" Link="webui\view\pdf\images\secondaryToolbarButton-lastPage.svg" />
+    <AndroidAsset Include="Assets\webui\view\pdf\images\secondaryToolbarButton-rotateCcw.svg" Link="webui\view\pdf\images\secondaryToolbarButton-rotateCcw.svg" />
+    <AndroidAsset Include="Assets\webui\view\pdf\images\secondaryToolbarButton-rotateCw.svg" Link="webui\view\pdf\images\secondaryToolbarButton-rotateCw.svg" />
+    <AndroidAsset Include="Assets\webui\view\pdf\images\secondaryToolbarButton-scrollHorizontal.svg" Link="webui\view\pdf\images\secondaryToolbarButton-scrollHorizontal.svg" />
+    <AndroidAsset Include="Assets\webui\view\pdf\images\secondaryToolbarButton-scrollPage.svg" Link="webui\view\pdf\images\secondaryToolbarButton-scrollPage.svg" />
+    <AndroidAsset Include="Assets\webui\view\pdf\images\secondaryToolbarButton-scrollVertical.svg" Link="webui\view\pdf\images\secondaryToolbarButton-scrollVertical.svg" />
+    <AndroidAsset Include="Assets\webui\view\pdf\images\secondaryToolbarButton-scrollWrapped.svg" Link="webui\view\pdf\images\secondaryToolbarButton-scrollWrapped.svg" />
+    <AndroidAsset Include="Assets\webui\view\pdf\images\secondaryToolbarButton-selectTool.svg" Link="webui\view\pdf\images\secondaryToolbarButton-selectTool.svg" />
+    <AndroidAsset Include="Assets\webui\view\pdf\images\secondaryToolbarButton-spreadEven.svg" Link="webui\view\pdf\images\secondaryToolbarButton-spreadEven.svg" />
+    <AndroidAsset Include="Assets\webui\view\pdf\images\secondaryToolbarButton-spreadNone.svg" Link="webui\view\pdf\images\secondaryToolbarButton-spreadNone.svg" />
+    <AndroidAsset Include="Assets\webui\view\pdf\images\secondaryToolbarButton-spreadOdd.svg" Link="webui\view\pdf\images\secondaryToolbarButton-spreadOdd.svg" />
+    <AndroidAsset Include="Assets\webui\view\pdf\images\toolbarButton-bookmark.svg" Link="webui\view\pdf\images\toolbarButton-bookmark.svg" />
+    <AndroidAsset Include="Assets\webui\view\pdf\images\toolbarButton-currentOutlineItem.svg" Link="webui\view\pdf\images\toolbarButton-currentOutlineItem.svg" />
+    <AndroidAsset Include="Assets\webui\view\pdf\images\toolbarButton-download.svg" Link="webui\view\pdf\images\toolbarButton-download.svg" />
+    <AndroidAsset Include="Assets\webui\view\pdf\images\toolbarButton-editorFreeText.svg" Link="webui\view\pdf\images\toolbarButton-editorFreeText.svg" />
+    <AndroidAsset Include="Assets\webui\view\pdf\images\toolbarButton-editorHighlight.svg" Link="webui\view\pdf\images\toolbarButton-editorHighlight.svg" />
+    <AndroidAsset Include="Assets\webui\view\pdf\images\toolbarButton-editorInk.svg" Link="webui\view\pdf\images\toolbarButton-editorInk.svg" />
+    <AndroidAsset Include="Assets\webui\view\pdf\images\toolbarButton-editorStamp.svg" Link="webui\view\pdf\images\toolbarButton-editorStamp.svg" />
+    <AndroidAsset Include="Assets\webui\view\pdf\images\toolbarButton-menuArrow.svg" Link="webui\view\pdf\images\toolbarButton-menuArrow.svg" />
+    <AndroidAsset Include="Assets\webui\view\pdf\images\toolbarButton-openFile.svg" Link="webui\view\pdf\images\toolbarButton-openFile.svg" />
+    <AndroidAsset Include="Assets\webui\view\pdf\images\toolbarButton-pageDown.svg" Link="webui\view\pdf\images\toolbarButton-pageDown.svg" />
+    <AndroidAsset Include="Assets\webui\view\pdf\images\toolbarButton-pageUp.svg" Link="webui\view\pdf\images\toolbarButton-pageUp.svg" />
+    <AndroidAsset Include="Assets\webui\view\pdf\images\toolbarButton-presentationMode.svg" Link="webui\view\pdf\images\toolbarButton-presentationMode.svg" />
+    <AndroidAsset Include="Assets\webui\view\pdf\images\toolbarButton-print.svg" Link="webui\view\pdf\images\toolbarButton-print.svg" />
+    <AndroidAsset Include="Assets\webui\view\pdf\images\toolbarButton-search.svg" Link="webui\view\pdf\images\toolbarButton-search.svg" />
+    <AndroidAsset Include="Assets\webui\view\pdf\images\toolbarButton-secondaryToolbarToggle.svg" Link="webui\view\pdf\images\toolbarButton-secondaryToolbarToggle.svg" />
+    <AndroidAsset Include="Assets\webui\view\pdf\images\toolbarButton-sidebarToggle.svg" Link="webui\view\pdf\images\toolbarButton-sidebarToggle.svg" />
+    <AndroidAsset Include="Assets\webui\view\pdf\images\toolbarButton-viewAttachments.svg" Link="webui\view\pdf\images\toolbarButton-viewAttachments.svg" />
+    <AndroidAsset Include="Assets\webui\view\pdf\images\toolbarButton-viewLayers.svg" Link="webui\view\pdf\images\toolbarButton-viewLayers.svg" />
+    <AndroidAsset Include="Assets\webui\view\pdf\images\toolbarButton-viewOutline.svg" Link="webui\view\pdf\images\toolbarButton-viewOutline.svg" />
+    <AndroidAsset Include="Assets\webui\view\pdf\images\toolbarButton-viewThumbnail.svg" Link="webui\view\pdf\images\toolbarButton-viewThumbnail.svg" />
+    <AndroidAsset Include="Assets\webui\view\pdf\images\toolbarButton-zoomIn.svg" Link="webui\view\pdf\images\toolbarButton-zoomIn.svg" />
+    <AndroidAsset Include="Assets\webui\view\pdf\images\toolbarButton-zoomOut.svg" Link="webui\view\pdf\images\toolbarButton-zoomOut.svg" />
+    <AndroidAsset Include="Assets\webui\view\pdf\images\treeitem-collapsed.svg" Link="webui\view\pdf\images\treeitem-collapsed.svg" />
+    <AndroidAsset Include="Assets\webui\view\pdf\images\treeitem-expanded.svg" Link="webui\view\pdf\images\treeitem-expanded.svg" />
+    <AndroidAsset Include="Assets\webui\view\pdf\index.html" Link="webui\view\pdf\index.html" />
+    <AndroidAsset Include="Assets\webui\view\pdf\locale\locale.json" Link="webui\view\pdf\locale\locale.json" />
+    <AndroidAsset Include="Assets\webui\view\pdf\locale\zh-CN\viewer.ftl" Link="webui\view\pdf\locale\zh-CN\viewer.ftl" />
+    <AndroidAsset Include="Assets\webui\view\pdf\pdf.js" Link="webui\view\pdf\pdf.js" />
+    <AndroidAsset Include="Assets\webui\view\pdf\pdf.sandbox.js" Link="webui\view\pdf\pdf.sandbox.js" />
+    <AndroidAsset Include="Assets\webui\view\pdf\pdf.worker.js" Link="webui\view\pdf\pdf.worker.js" />
+    <AndroidAsset Include="Assets\webui\view\pdf\standard_fonts\FoxitDingbats.pfb" Link="webui\view\pdf\standard_fonts\FoxitDingbats.pfb" />
+    <AndroidAsset Include="Assets\webui\view\pdf\standard_fonts\FoxitFixed.pfb" Link="webui\view\pdf\standard_fonts\FoxitFixed.pfb" />
+    <AndroidAsset Include="Assets\webui\view\pdf\standard_fonts\FoxitFixedBold.pfb" Link="webui\view\pdf\standard_fonts\FoxitFixedBold.pfb" />
+    <AndroidAsset Include="Assets\webui\view\pdf\standard_fonts\FoxitFixedBoldItalic.pfb" Link="webui\view\pdf\standard_fonts\FoxitFixedBoldItalic.pfb" />
+    <AndroidAsset Include="Assets\webui\view\pdf\standard_fonts\FoxitFixedItalic.pfb" Link="webui\view\pdf\standard_fonts\FoxitFixedItalic.pfb" />
+    <AndroidAsset Include="Assets\webui\view\pdf\standard_fonts\FoxitSerif.pfb" Link="webui\view\pdf\standard_fonts\FoxitSerif.pfb" />
+    <AndroidAsset Include="Assets\webui\view\pdf\standard_fonts\FoxitSerifBold.pfb" Link="webui\view\pdf\standard_fonts\FoxitSerifBold.pfb" />
+    <AndroidAsset Include="Assets\webui\view\pdf\standard_fonts\FoxitSerifBoldItalic.pfb" Link="webui\view\pdf\standard_fonts\FoxitSerifBoldItalic.pfb" />
+    <AndroidAsset Include="Assets\webui\view\pdf\standard_fonts\FoxitSerifItalic.pfb" Link="webui\view\pdf\standard_fonts\FoxitSerifItalic.pfb" />
+    <AndroidAsset Include="Assets\webui\view\pdf\standard_fonts\FoxitSymbol.pfb" Link="webui\view\pdf\standard_fonts\FoxitSymbol.pfb" />
+    <AndroidAsset Include="Assets\webui\view\pdf\standard_fonts\LICENSE_FOXIT" Link="webui\view\pdf\standard_fonts\LICENSE_FOXIT" />
+    <AndroidAsset Include="Assets\webui\view\pdf\standard_fonts\LICENSE_LIBERATION" Link="webui\view\pdf\standard_fonts\LICENSE_LIBERATION" />
+    <AndroidAsset Include="Assets\webui\view\pdf\standard_fonts\LiberationSans-Bold.ttf" Link="webui\view\pdf\standard_fonts\LiberationSans-Bold.ttf" />
+    <AndroidAsset Include="Assets\webui\view\pdf\standard_fonts\LiberationSans-BoldItalic.ttf" Link="webui\view\pdf\standard_fonts\LiberationSans-BoldItalic.ttf" />
+    <AndroidAsset Include="Assets\webui\view\pdf\standard_fonts\LiberationSans-Italic.ttf" Link="webui\view\pdf\standard_fonts\LiberationSans-Italic.ttf" />
+    <AndroidAsset Include="Assets\webui\view\pdf\standard_fonts\LiberationSans-Regular.ttf" Link="webui\view\pdf\standard_fonts\LiberationSans-Regular.ttf" />
+    <AndroidAsset Include="Assets\webui\view\pdf\viewer.css" Link="webui\view\pdf\viewer.css" />
+    <AndroidAsset Include="Assets\webui\view\pdf\viewer.js" Link="webui\view\pdf\viewer.js" />
+    <AndroidAsset Include="Assets\webui\view\player\css\ckplayer.css" Link="webui\view\player\css\ckplayer.css" />
+    <AndroidAsset Include="Assets\webui\view\player\css\images\.hidden" Link="webui\view\player\css\images\.hidden" />
+    <AndroidAsset Include="Assets\webui\view\player\css\images\.outside" Link="webui\view\player\css\images\.outside" />
+    <AndroidAsset Include="Assets\webui\view\player\css\images\adclose.png" Link="webui\view\player\css\images\adclose.png" />
+    <AndroidAsset Include="Assets\webui\view\player\css\images\buffer.png" Link="webui\view\player\css\images\buffer.png" />
+    <AndroidAsset Include="Assets\webui\view\player\css\images\ckplayer.48.png" Link="webui\view\player\css\images\ckplayer.48.png" />
+    <AndroidAsset Include="Assets\webui\view\player\css\images\ckplayer.png" Link="webui\view\player\css\images\ckplayer.png" />
+    <AndroidAsset Include="Assets\webui\view\player\css\images\ckplayer_ixigua.48.png" Link="webui\view\player\css\images\ckplayer_ixigua.48.png" />
+    <AndroidAsset Include="Assets\webui\view\player\css\images\ckplayer_ixigua.png" Link="webui\view\player\css\images\ckplayer_ixigua.png" />
+    <AndroidAsset Include="Assets\webui\view\player\css\images\ckplayer_red.48.png" Link="webui\view\player\css\images\ckplayer_red.48.png" />
+    <AndroidAsset Include="Assets\webui\view\player\css\images\ckplayer_red.png" Link="webui\view\player\css\images\ckplayer_red.png" />
+    <AndroidAsset Include="Assets\webui\view\player\css\images\loading.png" Link="webui\view\player\css\images\loading.png" />
+    <AndroidAsset Include="Assets\webui\view\player\css\images\logo.png" Link="webui\view\player\css\images\logo.png" />
+    <AndroidAsset Include="Assets\webui\view\player\css\images\play.png" Link="webui\view\player\css\images\play.png" />
+    <AndroidAsset Include="Assets\webui\view\player\js\ckplayer.min.js" Link="webui\view\player\js\ckplayer.min.js" />
+    <AndroidAsset Include="Assets\webui\view\player\language\zh.cn.js" Link="webui\view\player\language\zh.cn.js" />
+    <AndroidAsset Include="Assets\webui\view\ppt\css\nv.d3.min.css" Link="webui\view\ppt\css\nv.d3.min.css" />
+    <AndroidAsset Include="Assets\webui\view\ppt\css\pptxjs.css" Link="webui\view\ppt\css\pptxjs.css" />
+    <AndroidAsset Include="Assets\webui\view\ppt\filereader.js" Link="webui\view\ppt\filereader.js" />
+    <AndroidAsset Include="Assets\webui\view\ppt\index.html" Link="webui\view\ppt\index.html" />
+    <AndroidAsset Include="Assets\webui\view\ppt\js\d3.min.js" Link="webui\view\ppt\js\d3.min.js" />
+    <AndroidAsset Include="Assets\webui\view\ppt\js\dingbat.js" Link="webui\view\ppt\js\dingbat.js" />
+    <AndroidAsset Include="Assets\webui\view\ppt\js\divs2slides.js" Link="webui\view\ppt\js\divs2slides.js" />
+    <AndroidAsset Include="Assets\webui\view\ppt\js\divs2slides.min.js" Link="webui\view\ppt\js\divs2slides.min.js" />
+    <AndroidAsset Include="Assets\webui\view\ppt\js\filereader.js" Link="webui\view\ppt\js\filereader.js" />
+    <AndroidAsset Include="Assets\webui\view\ppt\js\jquery-1.11.3.min.js" Link="webui\view\ppt\js\jquery-1.11.3.min.js" />
+    <AndroidAsset Include="Assets\webui\view\ppt\js\jquery.fullscreen-min.js" Link="webui\view\ppt\js\jquery.fullscreen-min.js" />
+    <AndroidAsset Include="Assets\webui\view\ppt\js\jszip.min.js" Link="webui\view\ppt\js\jszip.min.js" />
+    <AndroidAsset Include="Assets\webui\view\ppt\js\nv.d3.min.js" Link="webui\view\ppt\js\nv.d3.min.js" />
+    <AndroidAsset Include="Assets\webui\view\ppt\js\pptxjs.js" Link="webui\view\ppt\js\pptxjs.js" />
+    <AndroidAsset Include="Assets\webui\view\ppt\js\pptxjs.min.js" Link="webui\view\ppt\js\pptxjs.min.js" />
+    <AndroidAsset Include="Assets\webui\view\video.html" Link="webui\view\video.html" />
+    <AndroidAsset Include="Assets\webui\view\xlsx.html" Link="webui\view\xlsx.html" />
+  </ItemGroup>
+
+  <!-- ================= AOT 例外 =================
+       全量 AOT / Profiled AOT 都会在 Xamarin.Google.Android.Material.dll 上报 XA3001：
+       Material 1.0.0.1 太旧，其 typeref 指向 AppCompat 1.6.1 中已改名的
+       AndroidX.AppCompat.Graphics.Drawable.DrawableWrapper。AOT 编译器必须解析全部
+       token，而 JIT 是惰性的，所以运行时一直正常、只有 AOT 编译失败。
+       这里仅把该程序集从「AOT 输入列表」临时摘掉，编译完立刻放回：
+       它仍会完整打进 APK（运行时由 JIT 处理），其余程序集全部走 AOT。 -->
+  <Target Name="_MchatAotExclude" BeforeTargets="_AndroidAot">
+    <ItemGroup>
+      <_MchatAotSkip Include="@(_ShrunkAssemblies->WithMetadataValue('Filename','Xamarin.Google.Android.Material'))" />
+      <_ShrunkAssemblies Remove="@(_MchatAotSkip)" />
+    </ItemGroup>
+    <Message Importance="normal" Text="AOT: 跳过 @(_MchatAotSkip)（AndroidX 绑定版本错配），其余程序集正常预编译" />
+  </Target>
+  <Target Name="_MchatAotRestore" AfterTargets="_AndroidAot">
+    <ItemGroup>
+      <_ShrunkAssemblies Include="@(_MchatAotSkip)" />
+    </ItemGroup>
+  </Target>
+</Project>

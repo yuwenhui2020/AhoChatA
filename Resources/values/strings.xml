@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+	<string name="app_name">AhoChat</string>
+	<string name="action_settings">Settings</string>
+	<string name="rd_accessibility_desc">Let computers and phones on your LAN control this device remotely: simulate taps, swipes and text input. Only needed when you turn on "Allow remote control".</string>
+	<string name="browser_hint">Search or enter a URL</string>
+
+	<!-- 各界面在「最近任务」里显示的名称 -->
+	<string name="act_ack">Acknowledgements</string>
+	<string name="act_apk_install">Install APK</string>
+	<string name="act_browser">Browser</string>
+	<string name="act_call">Call</string>
+	<string name="act_camera_view">Live View</string>
+	<string name="act_channel">Channels</string>
+	<string name="act_download">Downloads</string>
+	<string name="act_gps">Location Sharing</string>
+	<string name="act_ipcam">IP Camera</string>
+	<string name="act_music">Media</string>
+	<string name="act_reader">Reader</string>
+	<string name="act_photo">Photos</string>
+	<string name="act_privacy">Privacy &amp; Security</string>
+	<string name="act_remotedesk">Remote Desktop</string>
+	<string name="act_remotehost">Allow Remote Control</string>
+	<string name="act_scan">Scan</string>
+	<string name="act_share">Share to AhoChat</string>
+	<string name="act_shareview">Watch Together</string>
+	<string name="act_signal">Signal Probe</string>
+	<string name="act_userscript">Import User Script</string>
+	<string name="act_video">Video</string>
+	<string name="act_vod">Title Details</string>
+</resources>

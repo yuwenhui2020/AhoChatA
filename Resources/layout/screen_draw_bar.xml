@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/sdBarRoot"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="@drawable/screen_bar_bg"
+    android:padding="3dp">
+
+    <!-- 调色 / 画笔直径 选择面板（选中画笔或油漆桶时显示） -->
+    <HorizontalScrollView
+        android:id="@+id/sdChooser"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:scrollbars="none"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingBottom="2dp">
+
+            <LinearLayout
+                android:id="@+id/sdSwatches"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal" />
+
+            <SeekBar
+                android:id="@+id/sdSizeSeek"
+                android:layout_width="60dp"
+                android:layout_height="wrap_content"
+                android:max="58"
+                android:progress="6"
+                android:layout_marginStart="5dp" />
+        </LinearLayout>
+    </HorizontalScrollView>
+
+    <!-- 控件按钮行：画笔(兼作把手:长按展开/收起、拖拽移动、短按调色)、橡皮擦、油漆桶、关闭。
+         按钮固定 28dp 见方 + 8dp 内边距，使 24dp 图标等比缩到 12dp（原大小的一半），
+         同时保留 28dp 可点区域，便于触摸。 -->
+    <LinearLayout
+        android:id="@+id/sdButtons"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <ImageButton
+            android:id="@+id/sdPen"
+            android:layout_width="28dp"
+            android:layout_height="28dp"
+            android:src="@drawable/ic_pen"
+            android:background="@android:color/transparent"
+            android:scaleType="fitCenter"
+            android:padding="7dp"
+            android:layout_marginStart="2dp"
+            android:contentDescription="画笔" />
+
+        <ImageButton
+            android:id="@+id/sdEraser"
+            android:layout_width="28dp"
+            android:layout_height="28dp"
+            android:src="@drawable/ic_eraser"
+            android:background="@android:color/transparent"
+            android:scaleType="fitCenter"
+            android:padding="7dp"
+            android:layout_marginStart="2dp"
+            android:contentDescription="橡皮擦" />
+
+        <ImageButton
+            android:id="@+id/sdBucket"
+            android:layout_width="28dp"
+            android:layout_height="28dp"
+            android:src="@drawable/ic_bucket"
+            android:background="@android:color/transparent"
+            android:scaleType="fitCenter"
+            android:padding="7dp"
+            android:layout_marginStart="2dp"
+            android:contentDescription="油漆桶" />
+
+        <ImageButton
+            android:id="@+id/sdClose"
+            android:layout_width="28dp"
+            android:layout_height="28dp"
+            android:src="@drawable/ic_phone"
+            android:background="@android:color/transparent"
+            android:scaleType="fitCenter"
+            android:padding="7dp"
+            android:layout_marginStart="2dp"
+            android:contentDescription="退出画板" />
+    </LinearLayout>
+</LinearLayout>

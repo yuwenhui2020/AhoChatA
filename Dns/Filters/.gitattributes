@@ -1,0 +1,3 @@
+# Preserve upstream bytes (including LF) for the pinned SHA-256.
+adguard-dns-filter.txt -text
+AdGuardSDNSFilter-LICENSE.txt -text

@@ -1,0 +1,320 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/floatRoot"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:orientation="vertical">
+
+    <!-- 收起态：应用图标 + 未读徽标（点击展开） -->
+    <FrameLayout
+        android:id="@+id/floatCollapsed"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content">
+
+        <ImageView
+            android:id="@+id/floatIcon"
+            android:layout_width="26dp"
+            android:layout_height="26dp"
+            android:src="@drawable/icon"
+            android:contentDescription="聊天浮窗" />
+
+        <TextView
+            android:id="@+id/floatBadge"
+            android:layout_width="16dp"
+            android:layout_height="16dp"
+            android:layout_gravity="top|end"
+            android:gravity="center"
+            android:textSize="9dp"
+            android:textColor="#ffffff"
+            android:textStyle="bold"
+            android:background="@drawable/floating_badge"
+            android:visibility="gone" />
+    </FrameLayout>
+
+    <!-- 展开态：消息预览 + 输入发送 + 媒体控制键 -->
+    <LinearLayout
+        android:id="@+id/floatPanel"
+        android:layout_width="280dp"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:background="@drawable/floating_bg"
+        android:padding="6dp"
+        android:visibility="gone">
+
+        <!-- 头部：标题 / 收起 / 关闭 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="局域网消息"
+                android:textSize="13dp"
+                android:textStyle="bold"
+                android:textColor="#1a1a1a" />
+
+            <TextView
+                android:id="@+id/floatCollapse"
+                android:layout_width="28dp"
+                android:layout_height="28dp"
+                android:gravity="center"
+                android:text="—"
+                android:textSize="14dp"
+                android:textColor="#666666" />
+
+            <TextView
+                android:id="@+id/floatClose"
+                android:layout_width="28dp"
+                android:layout_height="28dp"
+                android:gravity="center"
+                android:text=""
+                android:textSize="14dp"
+                android:textColor="#fa5151" />
+        </LinearLayout>
+
+        <!-- 频道切换条（浮窗内直接换频道） -->
+        <HorizontalScrollView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:scrollbars="none"
+            android:paddingTop="2dp">
+
+            <LinearLayout
+                android:id="@+id/floatConvList"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal" />
+        </HorizontalScrollView>
+
+        <!-- 音乐播放条（嵌入浮窗，类似主界面底栏）：
+             本机在播 → 控制本机；本机没播但其它设备在播 → 控制那台设备；
+             都没有 → 仍控制本机（停在待播放状态也能开始播放）。 -->
+        <LinearLayout
+            android:id="@+id/floatMusicBar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:background="@drawable/floating_input_bg"
+            android:padding="4dp"
+            android:layout_marginTop="4dp"
+            android:visibility="gone">
+
+            <ImageView
+                android:id="@+id/floatMusicCover"
+                android:layout_width="34dp"
+                android:layout_height="34dp"
+                android:scaleType="centerCrop"
+                android:contentDescription="封面" />
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:layout_marginStart="6dp">
+
+                <TextView
+                    android:id="@+id/floatMusicTitle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textSize="12dp"
+                    android:textStyle="bold"
+                    android:textColor="#1a1a1a"
+                    android:maxLines="1"
+                    android:ellipsize="end" />
+
+                <TextView
+                    android:id="@+id/floatMusicSub"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textSize="10dp"
+                    android:textColor="#666666"
+                    android:maxLines="1"
+                    android:ellipsize="end" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/floatMusicPrev"
+                android:layout_width="30dp"
+                android:layout_height="34dp"
+                android:gravity="center"
+                android:textColor="#1a1a1a" />
+
+            <TextView
+                android:id="@+id/floatMusicPlay"
+                android:layout_width="30dp"
+                android:layout_height="34dp"
+                android:gravity="center"
+                android:textColor="#1a1a1a" />
+
+            <TextView
+                android:id="@+id/floatMusicNext"
+                android:layout_width="30dp"
+                android:layout_height="34dp"
+                android:gravity="center"
+                android:textColor="#1a1a1a" />
+        </LinearLayout>
+
+        <!-- 最近消息预览 -->
+        <ScrollView
+            android:id="@+id/floatScroll"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:maxHeight="200dp">
+
+            <LinearLayout
+                android:id="@+id/floatMsgList"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="4dp" />
+        </ScrollView>
+
+        <!-- 输入与发送 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingTop="4dp">
+
+            <EditText
+                android:id="@+id/floatInput"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:hint="发消息 / 思考：提问"
+                android:textSize="12dp"
+                android:textColor="#1a1a1a"
+                android:textColorHint="#999999"
+                android:background="@drawable/floating_input_bg"
+                android:padding="6dp"
+                android:imeOptions="actionSend"
+                android:inputType="text"
+                android:maxLines="3" />
+
+            <TextView
+                android:id="@+id/floatSend"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="发送"
+                android:textSize="12dp"
+                android:textColor="#ffffff"
+                android:background="@drawable/floating_send_bg"
+                android:paddingStart="10dp"
+                android:paddingEnd="10dp"
+                android:paddingTop="6dp"
+                android:paddingBottom="6dp"
+                android:layout_marginStart="6dp" />
+        </LinearLayout>
+
+        <!-- ============ 指令窗口（紧贴聊天窗口下方，可单独收起） ============ -->
+        <LinearLayout
+            android:id="@+id/floatCmdBox"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:layout_marginTop="6dp"
+            android:background="@drawable/floating_input_bg"
+            android:padding="4dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="指令（音量 / 媒体）"
+                    android:textSize="11dp"
+                    android:textColor="#666666"
+                    android:paddingStart="4dp" />
+
+                <TextView
+                    android:id="@+id/floatCmdToggle"
+                    android:layout_width="28dp"
+                    android:layout_height="22dp"
+                    android:gravity="center"
+                    android:text=""
+                    android:textSize="13dp"
+                    android:textColor="#666666" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/floatCmdRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center"
+                android:paddingTop="2dp">
+
+            <TextView
+                android:id="@+id/floatPrev"
+                android:layout_width="0dp"
+                android:layout_height="34dp"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:text=""
+                android:textSize="15dp"
+                android:textColor="#1a1a1a"
+                android:background="@drawable/floating_key_bg" />
+
+            <TextView
+                android:id="@+id/floatPlay"
+                android:layout_width="0dp"
+                android:layout_height="34dp"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:text=""
+                android:textSize="13dp"
+                android:textColor="#1a1a1a"
+                android:background="@drawable/floating_key_bg"
+                android:layout_marginStart="4dp"
+                android:layout_marginEnd="4dp" />
+
+            <TextView
+                android:id="@+id/floatNext"
+                android:layout_width="0dp"
+                android:layout_height="34dp"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:text=""
+                android:textSize="15dp"
+                android:textColor="#1a1a1a"
+                android:background="@drawable/floating_key_bg" />
+
+            <TextView
+                android:id="@+id/floatVolUp"
+                android:layout_width="0dp"
+                android:layout_height="34dp"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:text="+"
+                android:textSize="12dp"
+                android:textColor="#1a1a1a"
+                android:background="@drawable/floating_key_bg"
+                android:layout_marginStart="4dp" />
+
+            <TextView
+                android:id="@+id/floatVolDown"
+                android:layout_width="0dp"
+                android:layout_height="34dp"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:text="−"
+                android:textSize="12dp"
+                android:textColor="#1a1a1a"
+                android:background="@drawable/floating_key_bg"
+                android:layout_marginStart="4dp" />
+            </LinearLayout>
+        </LinearLayout>
+    </LinearLayout>
+</LinearLayout>

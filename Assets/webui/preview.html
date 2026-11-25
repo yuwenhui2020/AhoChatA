@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<script src="js/i18n.js"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>文件预览 · AhoChat 局域网共享</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background: #11151c; color: #e6e6e6; }
+  #topbar { position: fixed; top: 0; left: 0; right: 0; height: 48px; display: flex; align-items: center; gap: 10px;
+           padding: 0 12px; background: #1b2230; border-bottom: 1px solid #2c3650; z-index: 10; }
+  #topbar .name { flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 14px; }
+  #topbar a { color: #6fa8ff; text-decoration: none; font-size: 13px; padding: 6px 10px; border: 1px solid #2c3650; border-radius: 6px; }
+  #topbar a:hover { background: #243049; }
+  #frame { position: absolute; top: 48px; left: 0; right: 0; bottom: 0; border: 0; width: 100%; height: calc(100% - 48px); background: #fff; }
+  #msg { position: absolute; top: 48px; left: 0; right: 0; bottom: 0; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 14px; padding: 24px; text-align: center; }
+  #msg .big { font-size: 16px; color: #cdd6e6; }
+  #msg .sub { font-size: 13px; color: #8a93a6; }
+  #msg a.btn { color: #6fa8ff; border: 1px solid #2c3650; border-radius: 8px; padding: 10px 18px; text-decoration: none; }
+  #msg pre { max-width: 90%; max-height: 60%; overflow: auto; text-align: left; background: #0c0f15; color: #b9c4d6;
+             padding: 14px; border-radius: 8px; font-size: 13px; line-height: 1.5; white-space: pre-wrap; word-break: break-all; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+  <div id="topbar">
+    <span class="name" id="fname">文件预览</span>
+    <a id="dl" href="#" target="_blank" rel="noopener">下载</a>
+    <a id="opentab" href="#" target="_blank" rel="noopener" class="hidden">新窗口打开</a>
+  </div>
+
+  <iframe id="frame" class="hidden" allowfullscreen allow="fullscreen; picture-in-picture"
+          sandbox="allow-scripts allow-same-origin allow-forms allow-downloads allow-popups"></iframe>
+
+  <div id="msg">
+    <div class="big" id="msgBig">正在加载预览…</div>
+    <div class="sub" id="msgSub"></div>
+    <a class="btn hidden" id="msgBtn" href="#" target="_blank" rel="noopener">在新窗口打开</a>
+    <pre id="msgPre" class="hidden"></pre>
+  </div>
+
+<script>
+(function () {
+  function qp(name) {
+    var s = location.search || "";
+    var m = s.substr(1).split("&");
+    for (var i = 0; i < m.length; i++) {
+      var kv = m[i].split("=");
+      if (kv[0] === name) return decodeURIComponent(kv[1] || "");
+    }
+    return "";
+  }
+
+  var rawPath = qp("path");      // 共享目录内的相对路径（已编码）
+  var name = qp("name") || (rawPath ? rawPath.split("/").pop() : "");
+  document.getElementById("fname").textContent = name || "文件预览";
+
+  // 取文件内联接口（同域，供查看器 fetch/src 使用，不强制下载）
+  function rawUrl(p) {
+    return "/api/share/raw?path=" + encodeURIComponent(p);
+  }
+  var dl = document.getElementById("dl");
+  dl.href = "/api/share/download?path=" + encodeURIComponent(rawPath);
+
+  // 扩展名（小写，去参数）
+  var ext = (name.split(".").pop() || "").toLowerCase().split("?")[0];
+
+  var TEXT_EXT = ["txt","md","markdown","csv","tsv","json","xml","log","ini","conf","cfg","yaml","yml",
+                  "js","ts","css","html","htm","java","cs","cpp","c","h","hpp","py","sh","bat","ps1","sql","php","go","rb","kt","swift","vue","gitignore","properties"];
+  var IMG_EXT = ["png","jpg","jpeg","gif","webp","bmp","svg","ico"];
+  var VIDEO_EXT = ["mp4","webm","ogv","mov","m4v","mkv"];
+  var AUDIO_EXT = ["mp3","wav","ogg","m4a","aac","flac","opus"];
+  var PDF_EXT = ["pdf"];
+  var XLSX_EXT = ["xlsx","xls"];
+  var PPT_EXT = ["ppt","pptx"];
+  var MHT_EXT = ["mht","mhtml"];
+  var DOC_EXT = ["doc","docx"];
+  var ZIP_EXT = ["zip","rar","7z","tar","gz"];
+  var MODEL3D_EXT = ["stl","obj","ply","off","3ds","fbx","gltf","glb","dae","3dm","amf","wrl","step","stp","iges","igs","brep","ifc","fcstd","3mf","bim"];
+
+  function showFrame(src) {
+    document.getElementById("msg").classList.add("hidden");
+    var f = document.getElementById("frame");
+    f.src = src;
+    f.classList.remove("hidden");
+  }
+  function showMsg(big, sub, opt) {
+    document.getElementById("frame").classList.add("hidden");
+    var m = document.getElementById("msg");
+    m.classList.remove("hidden");
+    document.getElementById("msgBig").textContent = big || "";
+    document.getElementById("msgSub").textContent = sub || "";
+    var btn = document.getElementById("msgBtn");
+    var pre = document.getElementById("msgPre");
+    if (opt && opt.btnHref) {
+      btn.href = opt.btnHref; btn.classList.remove("hidden");
+    } else { btn.classList.add("hidden"); }
+    if (opt && opt.preText !== undefined) {
+      pre.textContent = opt.preText; pre.classList.remove("hidden");
+    } else { pre.classList.add("hidden"); }
+  }
+
+  // 文本类：用内置轻量查看器（file.html 是参考项目自带的纯文本查看器）
+  function openText() {
+    showFrame("/view/file.html?file=" + encodeURIComponent(rawUrl(rawPath)) + "&name=" + encodeURIComponent(name));
+  }
+
+  if (!rawPath) {
+    showMsg("缺少文件路径", "请从文件共享页面点击「预览」进入。", { btnHref: "/share" });
+    return;
+  }
+
+  // 文本
+  if (TEXT_EXT.indexOf(ext) >= 0) { openText(); return; }
+
+  // 图片：直接内联显示
+  if (IMG_EXT.indexOf(ext) >= 0) {
+    var imgUrl = rawUrl(rawPath);
+    showMsg("正在显示图片…", "");
+    var img = new Image();
+    img.onload = function () { showFrame("about:blank"); var f = document.getElementById("frame");
+      f.contentDocument.body.style.margin = "0"; f.contentDocument.body.style.background = "#11151c";
+      f.contentDocument.body.appendChild(img); img.style.maxWidth = "100%"; img.style.maxHeight = "100%"; };
+    img.onerror = function () { showMsg("图片加载失败", "可能文件已删除或权限不足。", { btnHref: dl.href }); };
+    img.src = imgUrl;
+    return;
+  }
+
+  // PDF：参考项目自带 pdf/index.html，支持 ?file= 同源加载
+  if (PDF_EXT.indexOf(ext) >= 0) {
+    showFrame("/view/pdf/index.html?file=" + encodeURIComponent(rawUrl(rawPath)));
+    return;
+  }
+
+  // 视频：自带播放器页（自适应、倍速、画中画、旋转、键盘快捷键）
+  if (VIDEO_EXT.indexOf(ext) >= 0) {
+    showFrame("/view/video.html?file=" + encodeURIComponent(rawUrl(rawPath))
+      + "&name=" + encodeURIComponent(name));
+    return;
+  }
+
+  // 音频
+  if (AUDIO_EXT.indexOf(ext) >= 0) {
+    showFrame("/view/music.html?file=" + encodeURIComponent(rawUrl(rawPath)));
+    return;
+  }
+
+  // Excel
+  if (XLSX_EXT.indexOf(ext) >= 0) {
+    showFrame("/view/xlsx.html?file=" + encodeURIComponent(rawUrl(rawPath)));
+    return;
+  }
+
+  // PPT（PptxJs 自带查看器，?file= 加载）
+  if (PPT_EXT.indexOf(ext) >= 0) {
+    showFrame("/view/ppt/index.html?file=" + encodeURIComponent(rawUrl(rawPath)));
+    return;
+  }
+
+  // MHT / MHTML
+  if (MHT_EXT.indexOf(ext) >= 0) {
+    showFrame("/view/mht.html?file=" + encodeURIComponent(rawUrl(rawPath)));
+    return;
+  }
+
+  // 3D 模型：参考项目的 3D 查看器（o3dv）拒绝在 iframe 内运行，故在新窗口打开
+  if (MODEL3D_EXT.indexOf(ext) >= 0) {
+    var u = "/view/3d/index.html#model=" + encodeURIComponent(rawUrl(rawPath));
+    document.getElementById("opentab").href = u;
+    document.getElementById("opentab").classList.remove("hidden");
+    showMsg("3D 模型预览", "为兼容 3D 查看器，请在「新窗口打开」中查看。", { btnHref: u });
+    return;
+  }
+
+  // Word / 压缩包等不支持内联预览的类型
+  if (DOC_EXT.indexOf(ext) >= 0 || ZIP_EXT.indexOf(ext) >= 0) {
+    showMsg("暂不支持在线预览", "该格式请直接下载后在本地打开。", { btnHref: dl.href });
+    return;
+  }
+
+  // 兜底：尝试作为文本打开，失败则提示下载
+  try { openText(); }
+  catch (e) { showMsg("无法预览该文件", "请下载后在本地打开。", { btnHref: dl.href }); }
+})();
+</script>
+</body>
+</html>

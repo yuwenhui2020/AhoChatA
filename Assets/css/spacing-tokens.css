@@ -1,0 +1,356 @@
+/* ================================================================
+ * 统一设计令牌系统 - Spacing & Layout Tokens
+ * 供所有模块复用：www、webui、viewer、reader
+ * ================================================================ */
+
+:root {
+  /* ========== 基础间距单位 (Base Unit = 4px) ========== */
+  --space-0: 0;
+  --space-1: 4px;   /* 4px  - 最小间距，用于紧凑元素间距 */
+  --space-2: 8px;   /* 8px  - 小间距，用于图标与文字、按钮内边距 */
+  --space-3: 12px;  /* 12px - 中小间距，用于表单项间距、卡片内边距 */
+  --space-4: 16px;  /* 16px - 标准间距，页面边距、卡片间距、列表项间距 */
+  --space-5: 20px;  /* 20px - 中大间距，用于区块间距 */
+  --space-6: 24px;  /* 24px - 大间距，用于主要区块分隔 */
+  --space-7: 32px;  /* 32px - 特大间距，用于页面级分隔 */
+  --space-8: 40px;  /* 40px - 巨大间距，用于大区块分隔 */
+
+  /* ========== 语义化间距别名 ========== */
+  /* 页面边距 */
+  --page-margin: var(--space-4);        /* 16px - 标准页面左右边距 */
+  --page-margin-sm: var(--space-3);     /* 12px - 紧凑页面边距 */
+  --page-margin-lg: var(--space-5);     /* 20px - 宽松页面边距 */
+
+  /* 卡片/容器内边距 */
+  --card-padding: var(--space-4);       /* 16px - 标准卡片内边距 */
+  --card-padding-sm: var(--space-3);    /* 12px - 紧凑卡片内边距 */
+  --card-padding-lg: var(--space-5);    /* 20px - 宽松卡片内边距 */
+
+  /* 组件间距 */
+  --gap-xs: var(--space-1);             /* 4px  - 极小间距 */
+  --gap-sm: var(--space-2);             /* 8px  - 小间距 */
+  --gap-md: var(--space-3);             /* 12px - 中等间距 */
+  --gap-lg: var(--space-4);             /* 16px - 大间距 */
+  --gap-xl: var(--space-5);             /* 20px - 特大间距 */
+
+  /* 列表项间距 */
+  --list-item-gap: var(--space-3);      /* 12px - 列表项垂直间距 */
+  --list-item-padding: var(--space-4);  /* 16px - 列表项内边距 */
+
+  /* 表单间距 */
+  --form-field-gap: var(--space-3);     /* 12px - 表单字段垂直间距 */
+  --form-label-gap: var(--space-1);     /* 4px  - 标签与输入框间距 */
+  --form-group-gap: var(--space-4);     /* 16px - 表单分组间距 */
+
+  /* 导航栏/工具栏高度 */
+  --toolbar-height: 56px;               /* 标准工具栏高度 */
+  --toolbar-height-sm: 44px;            /* 紧凑工具栏高度 */
+  --tab-bar-height: 56px;               /* 底部Tab栏高度 */
+
+  /* 输入框/按钮高度 */
+  --input-height: 44px;                 /* 标准输入框高度 */
+  --input-height-sm: 36px;              /* 紧凑输入框高度 */
+  --btn-height: 44px;                   /* 标准按钮高度 */
+  --btn-height-sm: 36px;                /* 紧凑按钮高度 */
+
+  /* 圆角半径 */
+  --radius-xs: 4px;     /* 极小圆角 - 标签、徽章 */
+  --radius-sm: 8px;     /* 小圆角 - 按钮、输入框、卡片 */
+  --radius-md: 10px;    /* 中圆角 - 卡片、弹窗 */
+  --radius-lg: 12px;    /* 大圆角 - 大卡片、模态框 */
+  --radius-xl: 16px;    /* 特大圆角 - 底部弹窗 */
+  --radius-full: 9999px; /* 圆形 - 头像、圆形按钮 */
+
+  /* 阴影 */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.12);
+  --shadow-xl: 0 16px 48px rgba(0, 0, 0, 0.15);
+
+  /* 行高 */
+  --line-height-tight: 1.3;   /* 标题、紧凑文本 */
+  --line-height-normal: 1.5;  /* 正文、标准文本 */
+  --line-height-relaxed: 1.7; /* 阅读模式、长文本 */
+  --line-height-loose: 1.9;   /* 宽松阅读、书籍 */
+
+  /* 字体大小阶梯 */
+  --text-xs: 11px;   /* 辅助说明、时间戳 */
+  --text-sm: 12px;   /* 次要文本、标签 */
+  --text-base: 14px; /* 标准正文 */
+  --text-md: 15px;   /* 稍大正文 */
+  --text-lg: 16px;   /* 大号正文、输入框 */
+  --text-xl: 17px;   /* 标题、强调 */
+  --text-2xl: 19px;  /* 大标题 */
+  --text-3xl: 22px;  /* 页面标题 */
+  --text-4xl: 28px;  /* 超大标题 */
+
+  /* 字重 */
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  /* 过渡动画 */
+  --transition-fast: 120ms ease;
+  --transition-normal: 200ms ease;
+  --transition-slow: 300ms ease;
+
+  /* 安全区域 */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+
+  /* Z-index 层级 */
+  --z-base: 0;
+  --z-dropdown: 100;
+  --z-sticky: 200;
+  --z-modal-backdrop: 1000;
+  --z-modal: 1100;
+  --z-popover: 1200;
+  --z-tooltip: 1300;
+  --z-toast: 1400;
+  --z-maximal: 2147483000; /* 视频全屏等最高层级 */
+}
+
+/* ================================================================
+ * 通用工具类 - 可在HTML中直接使用
+ * ================================================================ */
+
+/* 页面容器 */
+.page-container {
+  padding-left: var(--page-margin);
+  padding-right: var(--page-margin);
+  padding-top: calc(var(--safe-top) + var(--space-3));
+  padding-bottom: calc(var(--safe-bottom) + var(--space-3));
+}
+
+/* 卡片基础样式 */
+.card {
+  background: var(--card-bg, #fff);
+  border-radius: var(--radius-md);
+  padding: var(--card-padding);
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--card-border, transparent);
+}
+
+/* 列表项基础样式 */
+.list-item {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-md);
+  padding: var(--list-item-padding) var(--page-margin);
+}
+
+.list-item:not(:last-child) {
+  border-bottom: 1px solid var(--list-divider, #eee);
+}
+
+/* 表单字段基础样式 */
+.form-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--form-label-gap);
+}
+
+.form-field + .form-field {
+  margin-top: var(--form-field-gap);
+}
+
+.form-label {
+  font-size: var(--text-sm);
+  color: var(--text-secondary, #888);
+  font-weight: var(--font-weight-medium);
+}
+
+.form-input {
+  height: var(--input-height);
+  padding: 0 var(--space-3);
+  font-size: var(--text-lg);
+  border: 1px solid var(--input-border, #ddd);
+  border-radius: var(--radius-sm);
+  background: var(--input-bg, #fff);
+  color: var(--text-primary, #111);
+}
+
+.form-input:focus {
+  outline: none;
+  border-color: var(--accent, #07c160);
+  box-shadow: 0 0 0 3px var(--accent-alpha, rgba(7, 193, 96, 0.15));
+}
+
+/* 按钮基础样式 */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  height: var(--btn-height);
+  padding: 0 var(--space-4);
+  font-size: var(--text-base);
+  font-weight: var(--font-weight-medium);
+  border-radius: var(--radius-sm);
+  border: none;
+  cursor: pointer;
+  transition: background var(--transition-fast), opacity var(--transition-fast);
+}
+
+.btn:active {
+  opacity: 0.85;
+}
+
+.btn-sm {
+  height: var(--btn-height-sm);
+  padding: 0 var(--space-3);
+  font-size: var(--text-sm);
+}
+
+.btn-primary {
+  background: var(--accent, #07c160);
+  color: #fff;
+}
+
+.btn-secondary {
+  background: var(--btn-secondary-bg, #f0f0f0);
+  color: var(--text-primary, #111);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--accent, #07c160);
+}
+
+/* 图标按钮 */
+.icon-btn {
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--text-primary, #111);
+  font-size: 22px;
+}
+
+.icon-btn:active {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+/* 头像 */
+.avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: var(--radius-xs);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--text-base);
+  font-weight: var(--font-weight-semibold);
+  color: #fff;
+  background: var(--avatar-bg, #ccc);
+  overflow: hidden;
+}
+
+.avatar-sm { width: 28px; height: 28px; font-size: var(--text-sm); }
+.avatar-lg { width: 48px; height: 48px; font-size: var(--text-xl); }
+.avatar-xl { width: 60px; height: 60px; font-size: var(--text-2xl); }
+
+/* 分割线 */
+.divider {
+  height: 1px;
+  background: var(--divider-color, #eee);
+  margin: var(--space-3) 0;
+}
+
+/* 间距工具类 */
+.mt-0 { margin-top: var(--space-0); }
+.mt-1 { margin-top: var(--space-1); }
+.mt-2 { margin-top: var(--space-2); }
+.mt-3 { margin-top: var(--space-3); }
+.mt-4 { margin-top: var(--space-4); }
+.mt-5 { margin-top: var(--space-5); }
+.mt-6 { margin-top: var(--space-6); }
+
+.mb-0 { margin-bottom: var(--space-0); }
+.mb-1 { margin-bottom: var(--space-1); }
+.mb-2 { margin-bottom: var(--space-2); }
+.mb-3 { margin-bottom: var(--space-3); }
+.mb-4 { margin-bottom: var(--space-4); }
+.mb-5 { margin-bottom: var(--space-5); }
+.mb-6 { margin-bottom: var(--space-6); }
+
+.mx-auto { margin-left: auto; margin-right: auto; }
+
+.p-0 { padding: var(--space-0); }
+.p-1 { padding: var(--space-1); }
+.p-2 { padding: var(--space-2); }
+.p-3 { padding: var(--space-3); }
+.p-4 { padding: var(--space-4); }
+.p-5 { padding: var(--space-5); }
+.p-6 { padding: var(--space-6); }
+
+.px-4 { padding-left: var(--space-4); padding-right: var(--space-4); }
+.py-3 { padding-top: var(--space-3); padding-bottom: var(--space-3); }
+
+.gap-1 { gap: var(--space-1); }
+.gap-2 { gap: var(--space-2); }
+.gap-3 { gap: var(--space-3); }
+.gap-4 { gap: var(--space-4); }
+.gap-5 { gap: var(--space-5); }
+
+/* 文本工具类 */
+.text-xs { font-size: var(--text-xs); }
+.text-sm { font-size: var(--text-sm); }
+.text-base { font-size: var(--text-base); }
+.text-md { font-size: var(--text-md); }
+.text-lg { font-size: var(--text-lg); }
+.text-xl { font-size: var(--text-xl); }
+
+.text-primary { color: var(--text-primary, #1a1a1a); }
+.text-secondary { color: var(--text-secondary, #8a8a8a); }
+.text-muted { color: var(--text-muted, #aaa); }
+.text-accent { color: var(--accent, #07c160); }
+
+.font-medium { font-weight: var(--font-weight-medium); }
+.font-semibold { font-weight: var(--font-weight-semibold); }
+.font-bold { font-weight: var(--font-weight-bold); }
+
+.leading-tight { line-height: var(--line-height-tight); }
+.leading-normal { line-height: var(--line-height-normal); }
+.leading-relaxed { line-height: var(--line-height-relaxed); }
+.leading-loose { line-height: var(--line-height-loose); }
+
+/* Flex 布局工具 */
+.flex { display: flex; }
+.flex-col { flex-direction: column; }
+.flex-1 { flex: 1 1 auto; }
+.flex-auto { flex: 1 1 auto; }
+.flex-none { flex: 0 0 auto; }
+.items-center { align-items: center; }
+.items-start { align-items: flex-start; }
+.items-end { align-items: flex-end; }
+.justify-center { justify-content: center; }
+.justify-between { justify-content: space-between; }
+.justify-end { justify-content: flex-end; }
+.gap-2 { gap: var(--space-2); }
+.gap-3 { gap: var(--space-3); }
+.gap-4 { gap: var(--space-4); }
+
+/* 响应式断点 */
+@media (max-width: 360px) {
+  :root {
+    --page-margin: var(--space-3);
+    --card-padding: var(--space-3);
+    --toolbar-height: 52px;
+    --tab-bar-height: 52px;
+  }
+}
+
+@media (min-width: 768px) {
+  :root {
+    --page-margin: var(--space-6);
+    --card-padding: var(--space-5);
+  }
+}

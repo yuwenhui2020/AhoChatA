@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<meta name="renderer" content="webkit">
+<meta http-equiv="Cache-Control" content="no-siteapp" />
+<meta http-equiv="Cache-Control" content="no-transform " />
+<meta http-equiv="X-UA-Compatible" content="IE=Edge,chrome=1" >
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+    <meta charset="UTF-8">
+<script src="../js/i18n.js"></script>
+    <title>音乐播放器</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            min-height: 100vh;
+            background: #66ccff;
+            background-size: cover;
+            background-position: center;
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            transition: background 0.3s;
+            height:100%;
+        }
+
+        .player-container {
+            background: rgba(255, 255, 255, 0.9);
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.2);
+            max-width: 500px;
+            width: 100%;
+        }
+
+        .controls {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-top: 0px;
+        }
+
+        #lyrics {
+            margin-top: 20px;
+            height: 160px;
+            overflow-y: auto;
+            text-align: center;
+            line-height: 1.6;
+            scroll-behavior: smooth;
+        }
+
+        .highlight {
+            color: #2196F3;
+            font-weight: bold;
+            font-size: 1.2em;
+            padding: 4px 0;
+            transition: color 0.3s;
+        }
+
+        #errorToast {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.8);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 5px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="player-container">
+        <audio id="audioPlayer"></audio>
+        <div class="controls">
+            <span data-ico="volume"></span><input type="range" id="volumeSlider" min="0" max="1" step="0.1" value="1">
+            <a id="playPauseBtn"><span data-ico="play"></span> 播放</a>
+            <a href="/=?dir=music">返回列表</a>
+        </div>
+        <div id="lyrics"></div>
+    </div>
+    <div id="errorToast">自动播放失败</div>
+
+    <script src="/js/icons.js"></script>
+    <script>
+        // 初始化核心元素
+        const audioPlayer = document.getElementById('audioPlayer');
+        const playPauseBtn = document.getElementById('playPauseBtn');
+        const lyricsDiv = document.getElementById('lyrics');
+        const errorToast = document.getElementById('errorToast');
+
+        // 解析URL参数
+        const getUrlParam = (name) => {
+            const params = new URLSearchParams(window.location.search);
+            return params.get(name);
+        };
+
+        // 路径处理方法
+        const parseFilePath = (filePath) => {
+            const pathParts = filePath.split('/');
+            const fileName = pathParts.pop() || '';
+            return {
+                directory: pathParts.join('/') + (pathParts.length ? '/' : ''),
+                baseName: fileName.replace(/\.[^.]+$/, '')
+            };
+        };
+
+        // 初始化音乐播放器
+        const initPlayer = () => {
+            const audioFile = getUrlParam('file');
+            if (!audioFile) return;
+
+            const { directory, baseName } = parseFilePath(audioFile);
+            
+            // 设置音频源
+            audioPlayer.src = audioFile;
+
+            // 加载歌词文件
+            fetch(`${directory}${baseName}.lrc`)
+                .then(response => response.ok ? response.text() : Promise.reject())
+                .then(text => {
+                    lyricsDiv.style.display = 'block';
+                    setupLyrics(text);
+                })
+                .catch(() => lyricsDiv.style.display = 'none');
+
+            // 加载背景图片
+            const bgImg = new Image();
+            bgImg.onload = () => {
+                document.body.style.backgroundImage = `url('${directory}${baseName}.jpg')`;
+            };
+            bgImg.onerror = () => {
+                document.body.style.backgroundImage = '';
+            };
+            bgImg.src = `${directory}${baseName}.jpg`;
+
+            // 处理自动播放
+            const playAttempt = audioPlayer.play();
+            if (playAttempt !== undefined) {
+                playAttempt.catch(() => {
+                    errorToast.style.display = 'block';
+                    setTimeout(() => errorToast.style.display = 'none', 3000);
+                    document.addEventListener('click', resumePlayback, { once: true });
+                });
+            }
+        };
+
+        // 歌词处理系统
+        const setupLyrics = (text) => {
+            const lyrics = [];
+            const lineRegex = /\[(\d+):(\d+\.\d+)\](.+)/g;
+            let match;
+
+            while ((match = lineRegex.exec(text)) !== null) {
+                const minutes = parseInt(match[1]);
+                const seconds = parseFloat(match[2]);
+                const content = match[3].trim();
+                lyrics.push({
+                    time: minutes * 60 + seconds,
+                    text: content
+                });
+            }
+
+            lyrics.sort((a, b) => a.time - b.time);
+
+            audioPlayer.addEventListener('timeupdate', () => {
+                const currentTime = audioPlayer.currentTime;
+                let activeTime = -1;
+
+                // 查找当前歌词时间点
+                for (let i = lyrics.length - 1; i >= 0; i--) {
+                    if (lyrics[i].time <= currentTime) {
+                        activeTime = lyrics[i].time;
+                        break;
+                    }
+                }
+
+                // 更新歌词显示
+                lyricsDiv.innerHTML = lyrics.map(item => `
+                    <div class="${item.time === activeTime ? 'highlight' : ''}">
+                        ${item.text}
+                    </div>
+                `).join('');
+
+                // 自动滚动处理
+                const activeItems = [...lyricsDiv.querySelectorAll('.highlight')];
+                if (activeItems.length > 0) {
+                    const first = activeItems[0].offsetTop;
+                    const last = activeItems[activeItems.length-1].offsetTop;
+                    const scrollPos = (first + last - lyricsDiv.clientHeight - 100) / 2;
+                    lyricsDiv.scrollTo({ top: scrollPos, behavior: 'smooth' });
+                }
+            });
+        };
+
+        // 播放控制功能
+        const resumePlayback = () => audioPlayer.play();
+        playPauseBtn.addEventListener('click', () => {
+            audioPlayer.paused ? audioPlayer.play() : audioPlayer.pause();
+        });
+        document.getElementById('volumeSlider').addEventListener('input', (e) => {
+            audioPlayer.volume = e.target.value;
+        });
+
+        // 状态同步
+        audioPlayer.addEventListener('play', () => playPauseBtn.innerHTML = WI.svg('pause') + ' 暂停');
+        audioPlayer.addEventListener('pause', () => playPauseBtn.innerHTML = WI.svg('play') + ' 播放');
+
+        // 初始化
+        initPlayer();
+    </script>
+</body>
+</html>

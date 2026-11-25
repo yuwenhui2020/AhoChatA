@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="colorPrimary">#007AFF</color>
+    <color name="colorPrimaryDark">#0051D5</color>
+    <color name="colorAccent">#007AFF</color>
+
+    <!-- Shared iOS-style native light palette -->
+    <color name="lc_bg">#F2F2F7</color>
+    <color name="lc_page_bg">#F2F2F7</color>
+    <color name="lc_bar">#FFFFFF</color>
+    <color name="lc_line">#C6C6C8</color>
+    <color name="lc_text">#1C1C1E</color>
+    <color name="lc_sub">#8E8E93</color>
+    <color name="lc_accent">#007AFF</color>
+    <color name="lc_bubble_in">#FFFFFF</color>
+    <color name="lc_bubble_out">#95EC69</color>
+    <color name="lc_chip">#E5E5EA</color>
+    <color name="lc_chip_on">#E5F1FF</color>
+
+    <!-- Dark palette used by the native framework theme and ThemeEngine -->
+    <color name="lc_night_bg">#000000</color>
+    <color name="lc_night_card">#1C1C1E</color>
+    <color name="lc_night_chip">#2C2C2E</color>
+    <color name="lc_night_text">#F2F2F7</color>
+    <color name="lc_night_sub">#8E8E93</color>
+    <color name="lc_night_line">#38383A</color>
+</resources>

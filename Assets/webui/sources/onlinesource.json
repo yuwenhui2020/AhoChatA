@@ -1,0 +1,71 @@
+{
+  "name": "念心音源（兼容解析版）",
+  "note": "由 C:\\root\\SYNC\\同步\\1 反解而来。原稿（RC4+base64 混淆）只实现了 musicUrl：http://mcp.nianxinxz.com/share/ceshi/{kg|kw|mg|tx}.php?id=<ID>&level=<LEVEL>&type=mp3，网易单独走 http://music.nxinxz.com/csy/wy.php。kg 的 id 是酷狗 FileHash，其余平台是 songmid；代理会 302 到真实 CDN。音源本身不含搜索/歌词/封面，这三项由 OnlineMusic.cs 补齐（酷狗搜索 + 酷狗歌词 + 搜索封面）。播放会先解析 302 直链并缓存 20 分钟，优先读本地缓存文件。",
+  "proxy": {
+    "base": "https://mcp.nianxinxz.com/share/ceshi/",
+    "type": "mp3"
+  },
+  "platforms": {
+    "kg": {
+      "label": "酷狗",
+      "php": "kg.php",
+      "idField": "hash",
+      "qualities": { "128k": "standard", "320k": "exhigh", "flac": "lossless", "master": "master", "atmos": "atmos" }
+    },
+    "kw": {
+      "label": "酷我",
+      "php": "kw.php",
+      "idField": "songmid",
+      "qualities": { "128k": "standard", "320k": "exhigh", "flac": "lossless" }
+    },
+    "mg": {
+      "label": "咪咕",
+      "php": "mg.php",
+      "idField": "songmid",
+      "qualities": { "128k": "standard", "320k": "exhigh", "flac": "lossless" }
+    },
+    "tx": {
+      "label": "QQ",
+      "php": "tx.php",
+      "idField": "songmid",
+      "qualities": { "128k": "standard", "320k": "exhigh", "flac": "lossless", "hires": "hires", "master": "master", "atmos": "atmos" }
+    },
+    "wy": {
+      "label": "网易",
+      "php": "wy.php",
+      "idField": "songmid",
+      "qualities": { "128k": "standard", "320k": "exhigh", "flac": "lossless", "hires": "hires", "jyeffect": "jyeffect", "jymaster": "jymaster" }
+    }
+  },
+  "search": {
+    "provider": "kugou",
+    "endpoint": "https://songsearch.kugou.com/song_search_v2",
+    "params": "keyword={q}&page={page}&pagesize=20&filtername=1&userid=-1&clientver=&platform=WebFilter",
+    "fields": {
+      "lists": "data.lists",
+      "title": "SongName",
+      "artist": "SingerName",
+      "album": "AlbumName",
+      "duration": "Duration",
+      "id": "FileHash",
+      "hqId": "HQFileHash",
+      "sqId": "SQFileHash",
+      "cover": "Image"
+    },
+    "coverBase": "https://www.kugou.com/Content/Common/"
+  },
+  "lyric": {
+    "enabled": true,
+    "searchEndpoint": "https://krcs.kugou.com/search",
+    "downloadEndpoint": "https://lyrics.kugou.com/download"
+  },
+  "cache": {
+    "enabled": true,
+    "dir": "",
+    "maxMb": 512,
+    "prefetchOnAdd": true
+  },
+  "download": {
+    "dir": "/storage/emulated/0/Music"
+  }
+}

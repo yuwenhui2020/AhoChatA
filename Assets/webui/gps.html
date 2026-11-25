@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+<script src="js/i18n.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>位置共享</title>
+    <style>
+        :root {
+            --bg: #0e1116;
+            --card: #1c2430;
+            --line: #3a4557;
+            --text: #ffffff;
+            --sub: #d5dce8;
+            --accent: #7dd8ff;
+            --danger: #ff6b6b;
+            --ok: #4ec97c;
+            --self: #7dd8ff;
+            --peer: #ffd54f;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            background: var(--bg);
+            color: var(--text);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", Roboto, sans-serif;
+            font-size: 14px;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        header {
+            padding: 14px 16px;
+            border-bottom: 1px solid var(--line);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        h1 { font-size: 18px; margin: 0; flex: 1; }
+        .btn {
+            border: 1px solid var(--line);
+            background: var(--card);
+            color: var(--text);
+            border-radius: 8px;
+            padding: 8px 14px;
+            cursor: pointer;
+            font-size: 13px;
+        }
+        .btn:hover { background: #253042; }
+        .btn.primary { background: var(--accent); border-color: var(--accent); color: #000; }
+        .btn:disabled { opacity: .5; cursor: not-allowed; }
+        .status { font-size: 12px; color: var(--sub); margin-top: 4px; width: 100%; }
+        .status.ok { color: var(--ok); }
+        .status.err { color: var(--danger); }
+
+        .main { flex: 1; display: flex; flex-direction: column; padding: 12px; }
+        .radar-wrap { position: relative; flex: 1; min-height: 300px; border-radius: 12px; overflow: hidden; background: var(--card); border: 1px solid var(--line); }
+        canvas { display: block; width: 100%; height: 100%; }
+        .hint {
+            position: absolute; inset: 0;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            color: var(--sub); text-align: center; padding: 20px;
+            pointer-events: none;
+        }
+        .hint svg { width: 64px; height: 64px; margin-bottom: 12px; opacity: .5; }
+
+        .peers-panel { margin-top: 12px; max-height: 220px; overflow-y: auto; }
+        .peer-row {
+            display: flex; align-items: center; gap: 10px;
+            padding: 10px 12px;
+            background: var(--card);
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            margin-bottom: 8px;
+        }
+        .peer-row.self { border-color: var(--self); }
+        .peer-avatar {
+            width: 40px; height: 40px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 16px; background: var(--bg);
+        }
+        .peer-info { flex: 1; min-width: 0; }
+        .peer-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .peer-meta { font-size: 12px; color: var(--sub); display: flex; gap: 12px; flex-wrap: wrap; }
+        .peer-dist { color: var(--accent); }
+        .peer-battery { display: flex; align-items: center; gap: 4px; }
+        .battery-bar { width: 40px; height: 6px; background: var(--bg); border-radius: 3px; overflow: hidden; }
+        .battery-bar > i { display: block; height: 100%; border-radius: 3px; transition: width .3s; }
+    </style>
+</head>
+<body>
+<header>
+    <h1>位置共享</h1>
+    <button id="btnShare" class="btn primary">开启共享</button>
+    <button id="btnRequest" class="btn">请求位置</button>
+</header>
+<div class="status" id="status">等待手机上报位置…点击「开启共享」或「请求位置」</div>
+
+<div class="main">
+    <div class="radar-wrap">
+        <canvas id="canvas"></canvas>
+        <div class="hint" id="hint">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 2v20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+            <span id="hintText">等待位置数据…</span>
+        </div>
+    </div>
+    <div class="peers-panel" id="peersPanel"></div>
+</div>
+
+<script src="js/gps.js"></script>
+</body>
+</html>

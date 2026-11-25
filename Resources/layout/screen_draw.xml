@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/sdRoot"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <!-- 纯色底：铺满屏幕，遮蔽原屏幕内容以防干扰；油漆桶可改其颜色 -->
+    <View
+        android:id="@+id/sdBg"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#1b1b1b" />
+
+    <!-- 绘制层：透明画布叠加在纯色底之上，画笔绘制、橡皮擦仅擦除绘制层（露出纯色底） -->
+    <FrameLayout
+        android:id="@+id/sdCanvasHost"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+</FrameLayout>

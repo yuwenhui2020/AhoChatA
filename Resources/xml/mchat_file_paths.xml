@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- 应用私有 FilesDir/media：聊天收发的所有图片/视频/音频/文档/安装包等 -->
+    <files-path name="media" path="media" />
+    <!-- apk.1 打开时复制出的临时安装包落在 FilesDir 根，供系统安装器读取 -->
+    <files-path name="files_root" path="." />
+    <!-- cache 备用：临时中转文件 -->
+    <cache-path name="cache_root" path="." />
+    <!-- 外部存储（/sdcard）：音乐模块把视频交给系统播放器用 -->
+    <external-path name="ext_storage" path="." />
+</paths>

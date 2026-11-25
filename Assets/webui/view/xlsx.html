@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html>
+<head>
+<script src="../js/i18n.js"></script>
+    <title>XLSX 在线查看器</title>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<meta name="renderer" content="webkit">
+<meta http-equiv="Cache-Control" content="no-siteapp" />
+<meta http-equiv="Cache-Control" content="no-transform " />
+<meta http-equiv="X-UA-Compatible" content="IE=Edge,chrome=1" >
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">    <!-- 引入 SheetJS 库 -->
+    <script src="/static/js/xlsx.full.min.js"></script>
+    <style>
+        #excel-table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 20px 0;
+        }
+        #excel-table th, #excel-table td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            max-width: 300px;
+            word-wrap: break-word;
+        }
+        #excel-table tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        .header {
+            color: #333;
+            margin: 20px 0;
+        }
+        .error {
+            color: red;
+            padding: 20px;
+        }
+    </style>
+</head>
+<body>
+    <h1 class="header" id="filename">正在加载文件...</h1>
+    <div id="excel-container"></div>
+
+    <script>
+        // 从 URL 参数获取文件名
+        const urlParams = new URLSearchParams(window.location.search);
+        const fileParam = urlParams.get('file');
+
+        // 安全验证函数
+        function isValidFile(filename) {
+            const allowedExtensions = /(\.xlsx)$/i;
+            return allowedExtensions.exec(filename);
+        }
+
+        async function loadAndRender() {
+            try {
+                if (!fileParam) throw new Error('缺少文件参数：file');
+                if (!isValidFile(fileParam)) throw new Error('仅支持 .xlsx 文件');
+
+                // 显示文件名（经过安全处理）
+                document.getElementById('filename').textContent = `文件：${fileParam.replace(/[^a-z0-9_.-]/gi, '')}`;
+
+                // 获取文件
+                const response = await fetch(fileParam);
+                if (!response.ok) throw new Error('文件加载失败');
+                
+                // 转换为 ArrayBuffer
+                const arrayBuffer = await response.arrayBuffer();
+                
+                // 解析 Excel 文件
+                const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+                
+                // 获取第一个工作表
+                const firstSheetName = workbook.SheetNames[0];
+                const worksheet = workbook.Sheets[firstSheetName];
+                
+                // 转换为 HTML 表格
+                const html = XLSX.utils.sheet_to_html(worksheet, {
+                    editable: false,
+                    header: ''
+                });
+
+                // 渲染到页面
+                document.getElementById('excel-container').innerHTML = html;
+
+                // 优化表格样式
+                const tables = document.getElementsByTagName('table');
+                if (tables.length > 0) {
+                    tables[0].id = 'excel-table';
+                }
+            } catch (error) {
+                document.getElementById('excel-container').innerHTML = 
+                    `<div class="error">错误：${error.message}</div>`;
+            }
+        }
+
+        // 页面加载后执行
+        window.addEventListener('DOMContentLoaded', loadAndRender);
+    </script>
+</body>
+</html>

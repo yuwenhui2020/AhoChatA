@@ -1,0 +1,387 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  IP 摄像头 / 屏幕共享中枢页（v3 视觉：iOS 分组列表 + 矢量图标）
+  所有旧 id 保留，代码里只换了外观绑定。
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="#f2f2f7"
+    android:fitsSystemWindows="true">
+
+    <!-- 顶栏 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="#ffffff"
+        android:paddingLeft="16dp"
+        android:paddingRight="16dp">
+
+        <FrameLayout
+            android:id="@+id/ipBack"
+            android:layout_width="44dp"
+            android:layout_height="44dp" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:paddingLeft="6dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="共享画面"
+                android:textColor="#1c1c1e"
+                android:textSize="17sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="1dp"
+                android:text="摄像头 / 屏幕 · 局域网直连"
+                android:textColor="#8e8e93"
+                android:textSize="13sp" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="#c6c6c8" />
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:scrollbars="none">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingLeft="16dp"
+            android:paddingRight="16dp"
+            android:paddingBottom="24dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:paddingLeft="0dp"
+                android:paddingTop="16dp"
+                android:paddingBottom="7dp"
+                android:text="本机共享"
+                android:textColor="#8e8e93"
+                android:textSize="13sp" />
+
+            <LinearLayout
+                android:id="@+id/ipShareCard"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginLeft="0dp"
+                android:layout_marginRight="0dp"
+                android:background="@drawable/card_bg"
+                android:orientation="vertical">
+
+                <!-- 状态 + 主按钮 -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingLeft="16dp"
+                    android:paddingRight="12dp"
+                    android:paddingTop="14dp"
+                    android:paddingBottom="14dp">
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="共享状态"
+                            android:textColor="#1c1c1e"
+                            android:textSize="16sp" />
+
+                        <TextView
+                            android:id="@+id/ipStatus"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="3dp"
+                            android:text="未共享"
+                            android:textColor="#8e8e93"
+                            android:textSize="13sp" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/ipShare"
+                        android:layout_width="wrap_content"
+                        android:layout_height="44dp"
+                        android:background="@drawable/send_bg"
+                        android:backgroundTint="#007aff"
+                        android:gravity="center"
+                        android:minWidth="92dp"
+                        android:paddingLeft="18dp"
+                        android:paddingRight="18dp"
+                        android:text="开始共享"
+                        android:textColor="#ffffff"
+                        android:textSize="16sp" />
+                </LinearLayout>
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginLeft="0dp"
+                    android:background="#c6c6c8" />
+
+                <!-- 共享内容 -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:paddingLeft="16dp"
+                    android:paddingRight="16dp"
+                    android:paddingTop="16dp"
+                    android:paddingBottom="16dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="共享内容"
+                        android:textColor="#8e8e93"
+                        android:textSize="13sp" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:id="@+id/ipSrcCamera"
+                            android:layout_width="0dp"
+                            android:layout_height="44dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/chip_active"
+                            android:gravity="center"
+                            android:text="本机摄像头"
+                            android:textColor="#1c1c1e"
+                            android:textSize="13sp" />
+
+                        <TextView
+                            android:id="@+id/ipSrcScreen"
+                            android:layout_width="0dp"
+                            android:layout_height="44dp"
+                            android:layout_weight="1"
+                            android:layout_marginLeft="8dp"
+                            android:background="@drawable/chip_normal"
+                            android:gravity="center"
+                            android:text="本机屏幕"
+                            android:textColor="#8e8e93"
+                            android:textSize="13sp" />
+                    </LinearLayout>
+                </LinearLayout>
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginLeft="0dp"
+                    android:background="#c6c6c8" />
+
+                <!-- 画质 -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:paddingLeft="16dp"
+                    android:paddingRight="16dp"
+                    android:paddingTop="16dp"
+                    android:paddingBottom="16dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="画质（帧率固定 30fps，只调码率和分辨率）"
+                        android:textColor="#8e8e93"
+                        android:textSize="13sp" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:id="@+id/ipQ720"
+                            android:layout_width="0dp"
+                            android:layout_height="44dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/chip_active"
+                            android:gravity="center"
+                            android:text="720p 流畅"
+                            android:textColor="#1c1c1e"
+                            android:textSize="13sp" />
+
+                        <TextView
+                            android:id="@+id/ipQ1080"
+                            android:layout_width="0dp"
+                            android:layout_height="44dp"
+                            android:layout_weight="1"
+                            android:layout_marginLeft="8dp"
+                            android:background="@drawable/chip_normal"
+                            android:gravity="center"
+                            android:text="1080p 高清"
+                            android:textColor="#8e8e93"
+                            android:textSize="13sp" />
+                    </LinearLayout>
+                </LinearLayout>
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginLeft="0dp"
+                    android:background="#c6c6c8" />
+
+                <!-- 前后摄像头 -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingLeft="16dp"
+                    android:paddingRight="16dp"
+                    android:paddingTop="16dp"
+                    android:paddingBottom="16dp">
+
+                    <TextView
+                        android:id="@+id/ipFacingLabel"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="使用摄像头"
+                        android:textColor="#1c1c1e"
+                        android:textSize="16sp" />
+
+                    <TextView
+                        android:id="@+id/ipFacing"
+                        android:layout_width="wrap_content"
+                        android:layout_height="44dp"
+                        android:background="@drawable/chip_normal"
+                        android:gravity="center"
+                        android:paddingLeft="14dp"
+                        android:paddingRight="14dp"
+                        android:text="后置"
+                        android:textColor="#8e8e93"
+                        android:textSize="13sp" />
+                </LinearLayout>
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginLeft="0dp"
+                    android:background="#c6c6c8" />
+
+                <!-- 本机预览 -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingLeft="16dp"
+                    android:paddingRight="16dp"
+                    android:paddingTop="16dp"
+                    android:paddingBottom="16dp">
+
+                    <TextView
+                        android:id="@+id/ipPreview"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="本机预览（自测 / 当镜子）"
+                        android:textColor="#1c1c1e"
+                        android:textSize="16sp" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="打开"
+                        android:textColor="#007aff"
+                        android:textSize="13sp" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- 访问地址 -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:paddingLeft="0dp"
+                android:paddingTop="24dp"
+                android:paddingBottom="7dp"
+                android:text="访问地址"
+                android:textColor="#8e8e93"
+                android:textSize="13sp" />
+
+            <LinearLayout
+                android:id="@+id/ipAddressCard"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginLeft="0dp"
+                android:layout_marginRight="0dp"
+                android:background="@drawable/card_bg"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <TextView
+                    android:id="@+id/ipPc"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:lineSpacingExtra="3dp"
+                    android:text="开启共享后，这里会显示完整访问地址。"
+                    android:textColor="#8e8e93"
+                    android:textSize="13sp" />
+            </LinearLayout>
+
+            <!-- 局域网发现 -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:paddingLeft="0dp"
+                android:paddingTop="24dp"
+                android:paddingBottom="7dp"
+                android:text="局域网里正在共享的画面"
+                android:textColor="#8e8e93"
+                android:textSize="13sp" />
+
+            <LinearLayout
+                android:id="@+id/ipCamList"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginLeft="0dp"
+                android:layout_marginRight="0dp"
+                android:background="@drawable/card_bg"
+                android:orientation="vertical"
+                android:padding="4dp" />
+
+            <TextView
+                android:id="@+id/ipEmpty"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingLeft="0dp"
+                android:paddingRight="0dp"
+                android:paddingTop="10dp"
+                android:paddingBottom="4dp"
+                android:text="暂无发现。让对方也打开共享，且两台设备在同一 Wi-Fi。"
+                android:textColor="#8e8e93"
+                android:textSize="13sp" />
+        </LinearLayout>
+    </ScrollView>
+</LinearLayout>

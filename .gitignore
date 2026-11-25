@@ -1,0 +1,19 @@
+# 构建产物（build.bat 生成）
+bin/
+obj/
+dist/
+build.log
+
+# 本地临时目录：截图脚本、词典生成器、调试输出，不参与版本管理
+tmp/
+
+# 工具的工作目录（会话记录 / 项目记忆），不上传
+.workbuddy/
+
+# IDE / 系统
+.vs/
+.idea/
+*.user
+*.suo
+.DS_Store
+Thumbs.db

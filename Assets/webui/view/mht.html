@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html>
+<head>
+<script src="../js/i18n.js"></script>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<meta name="renderer" content="webkit">
+<meta http-equiv="Cache-Control" content="no-siteapp" />
+<meta http-equiv="Cache-Control" content="no-transform " />
+<meta http-equiv="X-UA-Compatible" content="IE=Edge,chrome=1" >
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+    <title>MHT/MHTML Viewer - 完整图片支持</title>
+    <style>
+        body { margin: 0; overflow: hidden; font-family: system-ui, -apple-system, sans-serif; }
+        iframe { width: 100%; height: 100vh; border: none; }
+        #error { position: fixed; top: 20px; left: 20px; right: 20px; background: #ffebee; color: #c62828; padding: 15px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 1000; display: none; border-left: 4px solid #c62828; backdrop-filter: blur(4px); }
+        #loading { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,0.8); color: white; padding: 12px 24px; border-radius: 40px; z-index: 1000; font-size: 14px; letter-spacing: 1px; box-shadow: 0 2px 12px rgba(0,0,0,0.3); }
+        .info-badge { position: fixed; bottom: 12px; right: 12px; background: rgba(0,0,0,0.5); color: #eee; font-size: 11px; padding: 4px 8px; border-radius: 20px; z-index: 1000; pointer-events: none; font-family: monospace; }
+    </style>
+</head>
+<body>
+    <div id="error"></div>
+    <div id="loading"><span data-ico="file"></span> 解析 MHT/MHTML 文件中...</div>
+    <div class="info-badge" id="infoBadge">MHT Viewer | 支持图片/CSS</div>
+
+    <script src="/js/icons.js"></script>
+    <script>
+        (function() {
+            const errorDiv = document.getElementById('error');
+            const loadingDiv = document.getElementById('loading');
+            const infoBadge = document.getElementById('infoBadge');
+
+            function showError(msg, details = '') {
+                if (loadingDiv) loadingDiv.style.display = 'none';
+                errorDiv.style.display = 'block';
+                errorDiv.innerHTML = `<strong>${WI.svg('warn')}解析错误</strong><br>${msg}${details ? `<br><small style="opacity:0.7">${details}</small>` : ''}<br><br><button onclick="location.reload()" style="margin-top:8px;padding:4px 12px;background:#c62828;color:white;border:none;border-radius:20px;cursor:pointer">重新加载</button>`;
+                console.error('[MHT Viewer]', msg, details);
+            }
+
+            function hideLoading() {
+                if (loadingDiv) loadingDiv.style.display = 'none';
+            }
+
+            function updateBadge(text) {
+                if (infoBadge) infoBadge.innerHTML = text;
+            }
+
+            // 增强版 quoted-printable 解码 -> Uint8Array (严格遵循RFC)
+            function decodeQuotedPrintableToBytes(str) {
+                const bytes = [];
+                let i = 0;
+                const len = str.length;
+                
+                while (i < len) {
+                    let ch = str[i];
+                    if (ch === '=') {
+                        // 软换行处理:  =\r\n 或 =\n
+                        if (i + 1 < len && (str[i+1] === '\r' || str[i+1] === '\n')) {
+                            if (str[i+1] === '\r' && i+2 < len && str[i+2] === '\n') i += 3;
+                            else if (str[i+1] === '\n') i += 2;
+                            else i += 2;
+                            continue;
+                        }
+                        // 标准 =XX 十六进制
+                        if (i + 2 < len && /^[0-9A-Fa-f]{2}$/.test(str.substr(i+1, 2))) {
+                            const byte = parseInt(str.substr(i+1, 2), 16);
+                            if (!isNaN(byte)) {
+                                bytes.push(byte);
+                                i += 3;
+                                continue;
+                            }
+                        }
+                        // 无效 = 序列当作普通字符
+                        bytes.push(str.charCodeAt(i) & 0xFF);
+                        i++;
+                    } else {
+                        bytes.push(str.charCodeAt(i) & 0xFF);
+                        i++;
+                    }
+                }
+                return new Uint8Array(bytes);
+            }
+
+            // Base64 到 Uint8Array (处理换行等)
+            function base64ToBytes(base64Str) {
+                const clean = base64Str.replace(/\s/g, '');
+                const binary = atob(clean);
+                const bytes = new Uint8Array(binary.length);
+                for (let i = 0; i < binary.length; i++) {
+                    bytes[i] = binary.charCodeAt(i);
+                }
+                return bytes;
+            }
+
+            // 将字节数组转为 Blob URL，并记录以便可选清理
+            function createBlobURL(bytes, mimeType) {
+                const blob = new Blob([bytes], { type: mimeType });
+                return URL.createObjectURL(blob);
+            }
+
+            // 智能查找头部结束位置 (兼容 \r\n\r\n 和 \n\n)
+            function findHeaderEnd(data) {
+                // 先尝试 \r\n\r\n
+                let idx = data.indexOf('\r\n\r\n');
+                if (idx !== -1) return idx + 4;
+                // 再尝试 \n\n
+                idx = data.indexOf('\n\n');
+                if (idx !== -1) return idx + 2;
+                return -1;
+            }
+
+            // 提取边界字符串 (支持多种格式)
+            function extractBoundary(headersSection) {
+                // 匹配 boundary="xxx" 或 boundary=xxx
+                const boundaryMatch = headersSection.match(/boundary\s*=\s*"?([^"\r\n;]+)"?/i);
+                if (boundaryMatch) {
+                    return boundaryMatch[1];
+                }
+                // 某些MHTML格式直接从内容中提取 --xxxx
+                const altMatch = headersSection.match(/--[a-zA-Z0-9\-_+]+/);
+                if (altMatch) return altMatch[0].substring(2);
+                return null;
+            }
+
+            // 分割 MHT/MHTML 多部分内容 (兼容不同换行)
+            function extractPartsFromMHT(rawData) {
+                // 查找头部结束位置 (兼容 \r\n\r\n 和 \n\n)
+                const headerEndPos = findHeaderEnd(rawData);
+                if (headerEndPos === -1) {
+                    throw new Error('未找到头部结束标记 (需要 \\r\\n\\r\\n 或 \\n\\n)');
+                }
+                
+                const headersSection = rawData.slice(0, headerEndPos);
+                const bodySection = rawData.slice(headerEndPos);
+                
+                const boundary = extractBoundary(headersSection);
+                if (!boundary) {
+                    throw new Error('无法提取MIME边界标识');
+                }
+                
+                // 转义边界用于正则
+                const escapedBoundary = boundary.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                // 分割正则: 匹配 --boundary 或 --boundary-- (可选换行)
+                const partSplitter = new RegExp(`--${escapedBoundary}(?:--)?(?:\\r?\\n)?`, 'g');
+                const parts = bodySection.split(partSplitter);
+                // 过滤开头空白部分和空字符串
+                return parts.filter(p => p && p.trim().length > 0);
+            }
+
+            // 解析单个 part 头部, 返回元数据
+            function parsePartMetadata(partStr) {
+                // 查找头部结束 (兼容 \r\n\r\n 和 \n\n)
+                let headerEndIdx = -1;
+                let headerEndPos = partStr.indexOf('\r\n\r\n');
+                if (headerEndPos !== -1) {
+                    headerEndIdx = headerEndPos + 4;
+                } else {
+                    headerEndPos = partStr.indexOf('\n\n');
+                    if (headerEndPos !== -1) {
+                        headerEndIdx = headerEndPos + 2;
+                    }
+                }
+                
+                if (headerEndIdx === -1) {
+                    return { headers: {}, body: partStr };
+                }
+                
+                const headersRaw = partStr.slice(0, headerEndIdx);
+                const body = partStr.slice(headerEndIdx);
+                const headers = {};
+                const lines = headersRaw.split(/\r?\n/);
+                for (let line of lines) {
+                    line = line.trim();
+                    if (!line) continue;
+                    const colonIdx = line.indexOf(':');
+                    if (colonIdx === -1) continue;
+                    const key = line.slice(0, colonIdx).trim().toLowerCase();
+                    let value = line.slice(colonIdx + 1).trim();
+                    if (headers[key]) {
+                        headers[key] += ' ' + value;
+                    } else {
+                        headers[key] = value;
+                    }
+                }
+                return { headers, body };
+            }
+
+            // 解析整个MHT，返回 { htmlContent, resourcesMap, charset }
+            function parseMHTComplete(rawData) {
+                const parts = extractPartsFromMHT(rawData);
+                if (parts.length === 0) throw new Error('未找到任何有效数据部分');
+                
+                const resources = new Map(); // key: cid:xxx 或 location路径
+                let mainHtml = null;
+                let detectedCharset = 'utf-8';
+                
+                for (const part of parts) {
+                    const { headers, body } = parsePartMetadata(part);
+                    if (!headers['content-type']) continue;
+                    
+                    // 解析 Content-Type 和 charset
+                    let contentType = headers['content-type'].split(';')[0].trim().toLowerCase();
+                    let charset = 'utf-8';
+                    const ctParams = headers['content-type'].split(';').slice(1);
+                    for (const param of ctParams) {
+                        const match = param.match(/charset\s*=\s*"?([^"\s;]+)"?/i);
+                        if (match) charset = match[1];
+                    }
+                    
+                    const encoding = headers['content-transfer-encoding'] ? headers['content-transfer-encoding'].toLowerCase() : '';
+                    let contentId = headers['content-id'] ? headers['content-id'].replace(/^<|>$/g, '') : '';
+                    let contentLocation = headers['content-location'] || '';
+                    
+                    // 解码 body 为原始字节
+                    let rawBytes = null;
+                    let decodedText = null;
+                    
+                    try {
+                        if (encoding === 'base64') {
+                            const cleanBody = body.replace(/\r?\n/g, '');
+                            rawBytes = base64ToBytes(cleanBody);
+                            if (contentType.startsWith('text/')) {
+                                decodedText = new TextDecoder(charset).decode(rawBytes);
+                            }
+                        } else if (encoding === 'quoted-printable') {
+                            rawBytes = decodeQuotedPrintableToBytes(body);
+                            if (contentType.startsWith('text/')) {
+                                decodedText = new TextDecoder(charset).decode(rawBytes);
+                            }
+                        } else {
+                            // 7bit, 8bit 或者无编码
+                            if (contentType.startsWith('text/')) {
+                                decodedText = body;
+                                rawBytes = new TextEncoder().encode(body);
+                            } else {
+                                rawBytes = new TextEncoder().encode(body);
+                            }
+                        }
+                    } catch (e) {
+                        console.warn('解码part失败:', e, contentType);
+                        continue;
+                    }
+                    
+                    // 主HTML内容
+                    if (contentType === 'text/html') {
+                        if (decodedText !== null) {
+                            mainHtml = decodedText;
+                            detectedCharset = charset;
+                        } else if (rawBytes) {
+                            mainHtml = new TextDecoder(charset).decode(rawBytes);
+                        } else {
+                            mainHtml = body;
+                        }
+                    } 
+                    
+                    // 存储资源 (图片、css、js等)
+                    if (contentType !== 'text/html' && rawBytes && rawBytes.length > 0) {
+                        // 资源标识: 优先使用 content-id, 其次 content-location
+                        if (contentId) {
+                            resources.set(`cid:${contentId}`, {
+                                bytes: rawBytes,
+                                mimeType: contentType,
+                                location: contentLocation,
+                                cid: contentId
+                            });
+                        }
+                        if (contentLocation) {
+                            if (!resources.has(contentLocation)) {
+                                resources.set(contentLocation, {
+                                    bytes: rawBytes,
+                                    mimeType: contentType,
+                                    location: contentLocation,
+                                    cid: contentId
+                                });
+                            }
+                            // 存储文件名版本
+                            const lastSlash = contentLocation.lastIndexOf('/');
+                            const fileName = lastSlash !== -1 ? contentLocation.substring(lastSlash+1) : contentLocation;
+                            if (fileName && !resources.has(fileName) && fileName.length > 0) {
+                                resources.set(fileName, {
+                                    bytes: rawBytes,
+                                    mimeType: contentType,
+                                    location: contentLocation,
+                                    cid: contentId
+                                });
+                            }
+                        }
+                        // 如果没有 content-id 和 location，但这是图片资源，使用fallback
+                        if (!contentId && !contentLocation && contentType.startsWith('image/')) {
+                            const fallbackKey = `_embedded_img_${resources.size}`;
+                            resources.set(fallbackKey, {
+                                bytes: rawBytes,
+                                mimeType: contentType,
+                                location: '',
+                                cid: ''
+                            });
+                        }
+                    }
+                }
+                
+                if (!mainHtml) throw new Error('未找到HTML主内容');
+                return { html: mainHtml, resources, charset: detectedCharset };
+            }
+            
+            // 智能替换HTML中所有资源引用 (img, css url, link, script, 背景图片等)
+            function resolveAndReplaceResources(htmlString, resourcesMap) {
+                if (!htmlString) return htmlString;
+                
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(htmlString, 'text/html');
+                const blobUrlRegistry = [];
+                
+                // 辅助函数: 根据 URI 匹配资源
+                function findResourceByUri(uri) {
+                    if (!uri) return null;
+                    // 去除可能的引号
+                    let cleanUri = uri.replace(/^['"]|['"]$/g, '');
+                    // 处理 cid: 协议
+                    if (cleanUri.startsWith('cid:')) {
+                        const cidPart = cleanUri.substring(4);
+                        return resourcesMap.get(`cid:${cidPart}`) || null;
+                    }
+                    // 直接精确匹配
+                    if (resourcesMap.has(cleanUri)) return resourcesMap.get(cleanUri);
+                    
+                    // 尝试匹配 content-location 或文件名模糊匹配
+                    for (let [key, res] of resourcesMap.entries()) {
+                        if (res.location === cleanUri) return res;
+                        if (cleanUri.endsWith(key) || key.endsWith(cleanUri)) return res;
+                        // 文件名匹配
+                        const uriFileName = cleanUri.split('/').pop();
+                        const keyFileName = key.split('/').pop();
+                        if (uriFileName && keyFileName && uriFileName === keyFileName) return res;
+                    }
+                    return null;
+                }
+                
+                // 替换 img src
+                const images = doc.querySelectorAll('img[src]');
+                for (const img of images) {
+                    const src = img.getAttribute('src');
+                    const res = findResourceByUri(src);
+                    if (res && res.bytes) {
+                        const blobUrl = createBlobURL(res.bytes, res.mimeType);
+                        blobUrlRegistry.push(blobUrl);
+                        img.setAttribute('src', blobUrl);
+                    }
+                }
+                
+                // 替换 link[rel="stylesheet"]
+                const links = doc.querySelectorAll('link[rel="stylesheet"][href]');
+                for (const link of links) {
+                    const href = link.getAttribute('href');
+                    const res = findResourceByUri(href);
+                    if (res && res.bytes) {
+                        const mime = res.mimeType.includes('css') ? res.mimeType : 'text/css';
+                        const blobUrl = createBlobURL(res.bytes, mime);
+                        blobUrlRegistry.push(blobUrl);
+                        link.setAttribute('href', blobUrl);
+                    }
+                }
+                
+                // 替换 script[src]
+                const scripts = doc.querySelectorAll('script[src]');
+                for (const script of scripts) {
+                    const src = script.getAttribute('src');
+                    const res = findResourceByUri(src);
+                    if (res && res.bytes) {
+                        const blobUrl = createBlobURL(res.bytes, 'application/javascript');
+                        blobUrlRegistry.push(blobUrl);
+                        script.setAttribute('src', blobUrl);
+                    }
+                }
+                
+                // 处理内联 style 属性中的 background-image: url(...)
+                const allElements = doc.querySelectorAll('[style]');
+                for (const el of allElements) {
+                    let styleVal = el.getAttribute('style');
+                    if (styleVal && styleVal.includes('url(')) {
+                        const newStyle = styleVal.replace(/url\(["']?([^"')]+)["']?\)/gi, (match, urlPath) => {
+                            const res = findResourceByUri(urlPath);
+                            if (res && res.bytes) {
+                                const blobUrl = createBlobURL(res.bytes, res.mimeType);
+                                blobUrlRegistry.push(blobUrl);
+                                return `url("${blobUrl}")`;
+                            }
+                            return match;
+                        });
+                        if (newStyle !== styleVal) {
+                            el.setAttribute('style', newStyle);
+                        }
+                    }
+                }
+                
+                // 处理 <style> 标签内部 CSS 的 url()
+                const styleTags = doc.querySelectorAll('style');
+                for (const styleTag of styleTags) {
+                    if (styleTag.textContent) {
+                        let css = styleTag.textContent;
+                        const updatedCss = css.replace(/url\(["']?([^"')]+)["']?\)/gi, (match, urlPath) => {
+                            const res = findResourceByUri(urlPath);
+                            if (res && res.bytes) {
+                                const blobUrl = createBlobURL(res.bytes, res.mimeType);
+                                blobUrlRegistry.push(blobUrl);
+                                return `url("${blobUrl}")`;
+                            }
+                            return match;
+                        });
+                        if (updatedCss !== css) {
+                            styleTag.textContent = updatedCss;
+                        }
+                    }
+                }
+                
+                // 处理 <source srcset>
+                const sources = doc.querySelectorAll('source[srcset]');
+                for (const source of sources) {
+                    let srcset = source.getAttribute('srcset');
+                    if (srcset) {
+                        const items = srcset.split(',').map(item => item.trim());
+                        const newItems = [];
+                        for (const item of items) {
+                            const [urlPart, descriptor] = item.split(/\s+/);
+                            const res = findResourceByUri(urlPart);
+                            if (res && res.bytes) {
+                                const blobUrl = createBlobURL(res.bytes, res.mimeType);
+                                blobUrlRegistry.push(blobUrl);
+                                newItems.push(descriptor ? `${blobUrl} ${descriptor}` : blobUrl);
+                            } else {
+                                newItems.push(item);
+                            }
+                        }
+                        source.setAttribute('srcset', newItems.join(', '));
+                    }
+                }
+                
+                // 保存 blob URLs
+                if (window._mhtBlobs) {
+                    window._mhtBlobs.push(...blobUrlRegistry);
+                } else {
+                    window._mhtBlobs = blobUrlRegistry;
+                }
+                
+                return '<!DOCTYPE html>\n' + doc.documentElement.outerHTML;
+            }
+            
+            // 确保HTML包含字符集声明
+            function finalizeHtmlDocument(html, charset) {
+                if (!html) return '<html><head><meta charset="utf-8"></head><body>无内容</body></html>';
+                if (!/<meta[^>]*charset[^>]*>/i.test(html)) {
+                    const metaTag = `<meta charset="${charset || 'utf-8'}">`;
+                    if (/<head[^>]*>/i.test(html)) {
+                        html = html.replace(/<head[^>]*>/i, match => `${match}${metaTag}`);
+                    } else if (/<html[^>]*>/i.test(html)) {
+                        html = html.replace(/<html[^>]*>/i, match => `${match}<head>${metaTag}</head>`);
+                    } else {
+                        html = `<head>${metaTag}</head>${html}`;
+                    }
+                }
+                if (!/<meta[^>]*name="viewport"[^>]*>/i.test(html)) {
+                    const viewportMeta = '<meta name="viewport" content="width=device-width, initial-scale=1.0">';
+                    html = html.replace(/<head[^>]*>/i, match => `${match}${viewportMeta}`);
+                }
+                return html;
+            }
+            
+            // 主入口
+            const urlParams = new URLSearchParams(window.location.search);
+            let filePath = urlParams.get('file');
+            
+            if (!filePath && window.location.hash && window.location.hash.includes('file=')) {
+                const hashSearch = window.location.hash.substring(1);
+                const hashParams = new URLSearchParams(hashSearch);
+                filePath = hashParams.get('file');
+            }
+            
+            if (!filePath) {
+                showError('未指定MHT/MHTML文件', '请在URL中使用 ?file=路径/文件名.mht 或 .mhtml');
+                hideLoading();
+                return;
+            }
+            
+            updateBadge(WI.svg('file') + ' 加载: ' + filePath.split('/').pop());
+            
+            fetch(filePath, {
+                cache: "no-store",
+                credentials: "same-origin"
+            })
+            .then(async response => {
+                if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                const text = await response.text();
+                if (!text || text.length === 0) throw new Error('文件内容为空');
+                return text;
+            })
+            .then(rawMht => {
+                hideLoading();
+                updateBadge(WI.svg('search') + ' 解析资源与图片...');
+                const { html, resources, charset } = parseMHTComplete(rawMht);
+                console.log(`解析成功 | HTML长度: ${html.length}, 资源数量: ${resources.size}, 字符集: ${charset}`);
+                
+                updateBadge(WI.svg('image') + ' 注入图片/CSS...');
+                let enrichedHtml = resolveAndReplaceResources(html, resources);
+                enrichedHtml = finalizeHtmlDocument(enrichedHtml, charset);
+                
+                const iframe = document.createElement('iframe');
+                iframe.setAttribute('sandbox', 'allow-same-origin allow-scripts allow-popups allow-forms allow-modals allow-downloads');
+                iframe.style.width = '100%';
+                iframe.style.height = '100vh';
+                iframe.style.border = 'none';
+                iframe.srcdoc = enrichedHtml;
+                
+                document.body.innerHTML = '';
+                document.body.appendChild(iframe);
+                updateBadge(WI.svg('check') + ' 显示完成 | 支持图片附件');
+                
+                iframe.onload = () => {
+                    console.log('MHT内容渲染完毕');
+                };
+            })
+            .catch(err => {
+                hideLoading();
+                let userMsg = err.message;
+                if (err.message.includes('Failed to fetch')) {
+                    userMsg = '无法获取文件。请检查文件路径，或使用本地HTTP服务器打开（不支持 file:// 协议跨域限制）。';
+                }
+                showError(`加载失败: ${err.message}`, userMsg);
+                updateBadge(WI.svg('close') + ' 加载失败');
+            });
+        })();
+    </script>
+</body>
+</html>

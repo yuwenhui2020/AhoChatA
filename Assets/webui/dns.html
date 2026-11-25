@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<script src="js/i18n.js"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>DNS 管理 · AhoChat</title>
+<link rel="stylesheet" href="/css/web.css">
+<style>
+  html, body { margin:0; background:#f4f6fa; font-family:-apple-system,"Microsoft YaHei",sans-serif; }
+  .wrap { max-width:720px; margin:0 auto; padding:14px; }
+  .card { background:#fff; border-radius:14px; padding:16px; box-shadow:0 2px 10px rgba(0,0,0,.06); margin-bottom:14px; }
+  .card h2 { font-size:16px; margin:0 0 12px; }
+  .row { display:flex; align-items:center; gap:10px; padding:10px 0; border-top:1px solid rgba(0,0,0,.05); }
+  .row:first-of-type { border-top:0; }
+  .row label { flex:0 0 110px; color:#667; font-size:13px; }
+  .row .grow { flex:1; }
+  input[type=text], input[type=number], select { width:100%; padding:9px 10px; border:1px solid #d7dce5; border-radius:8px; font-size:13px; box-sizing:border-box; }
+  button { padding:9px 14px; border:0; border-radius:8px; background:#2f7de0; color:#fff; font-size:13px; cursor:pointer; }
+  button.ghost { background:#e8ecf3; color:#333; }
+  button.danger { background:#f56c6c; }
+  .switch { width:46px; height:26px; border-radius:13px; background:#c9cfd9; position:relative; cursor:pointer; transition:background .2s; }
+  .switch.on { background:#1fbf6b; }
+  .switch i { position:absolute; top:3px; left:3px; width:20px; height:20px; border-radius:50%; background:#fff; transition:left .2s; }
+  .switch.on i { left:23px; }
+  .hint { color:#98a; font-size:12px; line-height:1.6; margin-top:8px; }
+  .toast { position:fixed; left:50%; bottom:28px; transform:translateX(-50%); background:rgba(0,0,0,.82); color:#fff; padding:10px 18px; border-radius:20px; font-size:13px; opacity:0; transition:opacity .25s; pointer-events:none; z-index:99; }
+  .toast.show { opacity:1; }
+  .back { color:#2f7de0; text-decoration:none; font-size:13px; }
+  .status-badge { display:inline-block; padding:3px 8px; border-radius:12px; font-size:11px; font-weight:600; }
+  .status-badge.running { background:#e8f5e9; color:#2e7d32; }
+  .status-badge.stopped { background:#fef0f0; color:#c62828; }
+  .table-wrap { overflow-x:auto; }
+  table { width:100%; border-collapse:collapse; font-size:12px; }
+  th, td { padding:8px 10px; text-align:left; border-bottom:1px solid #edf0f5; }
+  th { color:#667; font-weight:600; background:#fafbfc; position:sticky; top:0; }
+  tr:hover td { background:#fafbfc; }
+  .badge { display:inline-block; padding:2px 6px; border-radius:8px; font-size:10px; font-weight:600; }
+  .badge.blocked { background:#fef0f0; color:#c62828; }
+  .badge.allowed { background:#e8f5e9; color:#2e7d32; }
+  .badge.cached { background:#e3f2fd; color:#1565c0; }
+  .badge.upstream { background:#fff3e0; color:#ef6c00; }
+  .list-input { display:flex; gap:8px; margin-top:8px; }
+  .list-input input { flex:1; }
+  .list-input button { padding:8px 12px; }
+  .empty { text-align:center; color:#98a; padding:20px; font-size:13px; }
+  .tabs { display:flex; gap:4px; margin-bottom:12px; }
+  .tab { flex:1; text-align:center; padding:10px; background:#eef1f6; border-radius:8px; font-size:13px; color:#445; cursor:pointer; }
+  .tab.active { background:#2f7de0; color:#fff; }
+  .tab-panel { display:none; }
+  .tab-panel.active { display:block; }
+  .stats-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; margin-top:8px; }
+  .stat-item { background:#f8f9fc; border-radius:10px; padding:12px; text-align:center; }
+  .stat-value { font-size:20px; font-weight:700; color:#2f7de0; }
+  .stat-label { font-size:11px; color:#98a; margin-top:4px; }
+  .upstream-item { display:flex; gap:8px; align-items:center; padding:8px 0; border-bottom:1px solid #edf0f5; }
+  .upstream-item:last-child { border-bottom:0; }
+  .upstream-type { font-size:10px; padding:2px 6px; border-radius:4px; background:#eef1f6; }
+  .upstream-type.doh { background:#e3f2fd; color:#1565c0; }
+  .upstream-type.dot { background:#f3e5f5; color:#7b1fa2; }
+  .upstream-type.tcp { background:#fff3e0; color:#ef6c00; }
+  .upstream-type.udp { background:#e8f5e9; color:#2e7d32; }
+  .modal { position:fixed; inset:0; background:rgba(0,0,0,.4); display:flex; align-items:center; justify-content:center; z-index:100; opacity:0; pointer-events:none; transition:opacity .2s; }
+  .modal.show { opacity:1; pointer-events:auto; }
+  .modal-box { background:#fff; border-radius:16px; padding:20px; width:90%; max-width:400px; }
+  .modal-box h3 { margin:0 0 16px; font-size:16px; }
+  .modal-row { margin-bottom:12px; }
+  .modal-row label { display:block; font-size:12px; color:#667; margin-bottom:6px; }
+  .modal-row input, .modal-row select { width:100%; padding:10px; border:1px solid #d7dce5; border-radius:8px; font-size:13px; box-sizing:border-box; }
+  .modal-actions { display:flex; gap:8px; justify-content:flex-end; margin-top:16px; }
+  [hidden] { display:none !important; }
+  .spinner { display:inline-block; width:14px; height:14px; border:2px solid #fff; border-right-color:transparent; border-radius:50%; animation:spin .8s linear infinite; margin-right:8px; vertical-align:middle; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+    <h2 style="margin:0;font-size:18px;">DNS 管理</h2>
+    <a class="back" href="/">返回首页</a>
+  </div>
+
+  <!-- 状态卡片 -->
+  <div class="card">
+    <h2>运行状态</h2>
+    <div class="row">
+      <label>DNS 服务</label>
+      <div class="grow">
+        <span id="statusBadge" class="status-badge stopped">已停止</span>
+      </div>
+      <button id="btnToggle" class="ghost" onclick="toggleDns()">启动</button>
+    </div>
+    <div class="row">
+      <label>监听端口</label>
+      <div class="grow" id="portDisplay">53</div>
+    </div>
+    <div class="row">
+      <label>模式</label>
+      <div class="grow" id="modeDisplay">UDP/TCP</div>
+    </div>
+    <div class="hint" id="modeHint">Android 使用 VPN 模式处理系统及内置浏览器的常规 DNS 查询。DNS VPN 不转发或加密网页内容；网页传输请使用 HTTPS。DoH/DoT 只加密 DNS 上游连接；UDP/TCP DNS 不加密。</div>
+  </div>
+
+  <!-- 统计卡片 -->
+  <div class="card">
+    <h2>实时统计</h2>
+    <div class="stats-grid">
+      <div class="stat-item"><div id="statTotal" class="stat-value">0</div><div class="stat-label">总查询</div></div>
+      <div class="stat-item"><div id="statBlocked" class="stat-value">0</div><div class="stat-label">已拦截</div></div>
+      <div class="stat-item"><div id="statCached" class="stat-value">0</div><div class="stat-label">缓存命中</div></div>
+      <div class="stat-item"><div id="statUpstream" class="stat-value">0</div><div class="stat-label">上游查询</div></div>
+      <div class="stat-item"><div id="statErrors" class="stat-value">0</div><div class="stat-label">错误</div></div>
+      <div class="stat-item"><div id="statAvgMs" class="stat-value">0</div><div class="stat-label">平均耗时(ms)</div></div>
+    </div>
+    <button class="ghost" style="margin-top:12px;width:100%;" onclick="refreshStats()">刷新统计</button>
+  </div>
+
+  <!-- 标签页 -->
+  <div class="tabs">
+    <button class="tab active" data-tab="config">基础配置</button>
+    <button class="tab" data-tab="upstream">上游服务器</button>
+    <button class="tab" data-tab="filter">过滤规则</button>
+    <button class="tab" data-tab="log">查询日志</button>
+  </div>
+
+  <!-- 基础配置 -->
+  <div class="tab-panel active" id="panel-config">
+    <div class="card">
+      <h2>基础设置</h2>
+      <div class="row">
+        <label>启用 DNS</label>
+        <div class="grow"></div>
+        <div id="cfgEnabled" class="switch" onclick="toggleSwitch('cfgEnabled', 'enabled')"><i></i></div>
+      </div>
+      <div class="row" id="autoStartRow" hidden>
+        <label for="cfgAutoStart">开机自动启动</label>
+        <input id="cfgAutoStart" type="checkbox" onchange="updateConfig({ autoStart: this.checked })">
+        <span class="hint">首次 VPN 授权需在 Android 设备上完成</span>
+      </div>
+      <div class="row">
+        <label>监听端口</label>
+        <input id="cfgPort" class="grow" type="number" min="1" max="65535" value="53">
+      </div>
+      <div class="row">
+        <label>上游超时(ms)</label>
+        <input id="cfgTimeout" class="grow" type="number" min="1000" max="30000" value="5000">
+      </div>
+      <div class="row">
+        <label>启用缓存</label>
+        <div class="grow"></div>
+        <div id="cfgCache" class="switch" onclick="toggleSwitch('cfgCache', 'enableCache')"><i></i></div>
+      </div>
+      <div class="row">
+        <label>缓存大小</label>
+        <input id="cfgCacheSize" class="grow" type="number" min="100" max="100000" value="10000">
+      </div>
+      <div class="row">
+        <label>缓存 TTL(s)</label>
+        <input id="cfgCacheTtl" class="grow" type="number" min="60" max="86400" value="300">
+      </div>
+      <div class="row">
+        <label>记录查询日志</label>
+        <div class="grow"></div>
+        <div id="cfgLog" class="switch" onclick="toggleSwitch('cfgLog', 'logQueries')"><i></i></div>
+      </div>
+      <div class="row">
+        <label>日志最大条数</label>
+        <input id="cfgMaxLog" class="grow" type="number" min="100" max="100000" value="10000">
+      </div>
+      <div class="row">
+        <label></label>
+        <button onclick="saveConfig()">保存配置</button>
+        <button class="ghost" onclick="loadConfig()">重置</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 上游服务器 -->
+  <div class="tab-panel" id="panel-upstream">
+    <div class="card">
+      <h2>上游 DNS 服务器 <span style="font-weight:400;font-size:12px;color:#98a;">(支持 UDP/TCP/DoH/DoT)</span></h2>
+      <div id="preferSecureRow" style="margin-bottom:12px;">
+        <label style="font-size:12px;color:#667;">优先使用加密上游 (DoH/DoT)</label>
+        <div id="cfgPreferSecure" class="switch" style="float:right;" onclick="toggleSwitch('cfgPreferSecure', 'preferSecureUpstream')"><i></i></div>
+      </div>
+      <div id="upstreamList"></div>
+      <div class="list-input">
+        <input id="newUpstream" type="text" placeholder="例: 8.8.8.8:53 / https://dns.google/dns-query / tls://1.1.1.1:853 / tcp://9.9.9.9:53">
+        <button onclick="addUpstream()">添加</button>
+      </div>
+      <div class="hint">格式说明：<br>
+      • UDP: <code>8.8.8.8</code> 或 <code>8.8.8.8:53</code><br>
+      • TCP: <code>tcp://9.9.9.9:53</code><br>
+      • DoH: <code>https://dns.google/dns-query</code><br>
+      • DoT: <code>tls://1.1.1.1:853</code>
+      </div>
+    </div>
+  </div>
+
+  <!-- 过滤规则 -->
+  <div class="tab-panel" id="panel-filter">
+    <div class="card">
+      <h2>广告与追踪过滤</h2>
+      <div class="hint">内置 AdGuard DNS 过滤列表可离线使用。该来源合并广告与追踪规则，下面任一开关开启时加载同一份列表；两个开关都关闭时停用内置列表。自定义列表继续生效。</div>
+      <div class="row">
+        <label>拦截广告</label>
+        <div class="grow"></div>
+        <div id="cfgBlockAds" class="switch" onclick="toggleSwitch('cfgBlockAds', 'blockAds')"><i></i></div>
+      </div>
+      <div class="row">
+        <label>拦截追踪器</label>
+        <div class="grow"></div>
+        <div id="cfgBlockTrackers" class="switch" onclick="toggleSwitch('cfgBlockTrackers', 'blockTrackers')"><i></i></div>
+      </div>
+      <div id="cfgBlockMalware" hidden></div>
+      <div class="hint">未内置独立的恶意软件情报列表。需要此类保护时，请添加可信的 DNS 屏蔽列表。</div>
+    </div>
+    <div class="card">
+      <h2>自定义屏蔽列表 (URL)</h2>
+      <div id="blocklistList"></div>
+      <div class="list-input">
+        <input id="newBlocklist" type="text" placeholder="https://example.com/blocklist.txt">
+        <button onclick="addBlocklist()">添加</button>
+      </div>
+    </div>
+    <div class="card">
+      <h2>自定义允许列表 (URL)</h2>
+      <div id="allowlistList"></div>
+      <div class="list-input">
+        <input id="newAllowlist" type="text" placeholder="https://example.com/allowlist.txt">
+        <button onclick="addAllowlist()">添加</button>
+      </div>
+    </div>
+    <div class="card">
+      <h2>域名重写规则</h2>
+      <div id="rewriteList"></div>
+      <div class="list-input">
+        <input id="newRewriteDomain" type="text" placeholder="example.com" style="width:100px;">
+        <input id="newRewriteAnswer" type="text" placeholder="192.168.1.100" style="width:120px;">
+        <button onclick="addRewrite()">添加</button>
+      </div>
+      <div class="hint">将指定域名解析到自定义 IP，支持内网域名定向、开发测试等场景</div>
+    </div>
+  </div>
+
+  <!-- 查询日志 -->
+  <div class="tab-panel" id="panel-log">
+    <div class="card">
+      <h2>最近查询日志</h2>
+      <div style="display:flex;gap:8px;margin-bottom:12px;">
+        <select id="logLimit" style="padding:8px;border:1px solid #d7dce5;border-radius:8px;font-size:13px;">
+          <option value="50">50 条</option>
+          <option value="100" selected>100 条</option>
+          <option value="200">200 条</option>
+          <option value="500">500 条</option>
+        </select>
+        <button onclick="refreshLog()">刷新</button>
+      </div>
+      <div class="table-wrap" id="logTableWrap">
+        <table>
+          <thead>
+            <tr>
+              <th>时间</th>
+              <th>客户端</th>
+              <th>域名</th>
+              <th>类型</th>
+              <th>结果</th>
+              <th>状态</th>
+              <th>耗时</th>
+              <th>上游</th>
+            </tr>
+          </thead>
+          <tbody id="logTableBody"></tbody>
+        </table>
+      </div>
+      <div id="logEmpty" class="empty" style="display:none;">暂无查询日志</div>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<!-- 添加上游模态框 -->
+<div id="modalUpstream" class="modal">
+  <div class="modal-box">
+    <h3>添加/编辑上游服务器</h3>
+    <div class="modal-row">
+      <label>类型</label>
+      <select id="modalUpstreamType">
+        <option value="udp">UDP</option>
+        <option value="tcp">TCP</option>
+        <option value="doh">DoH (HTTPS)</option>
+        <option value="dot">DoT (TLS)</option>
+      </select>
+    </div>
+    <div class="modal-row">
+      <label>地址</label>
+      <input id="modalUpstreamAddr" type="text" placeholder="8.8.8.8:53 或 dns.google">
+    </div>
+    <div class="modal-row">
+      <label>路径 (仅 DoH)</label>
+      <input id="modalUpstreamPath" type="text" placeholder="/dns-query" value="/dns-query">
+    </div>
+    <div class="modal-actions">
+      <button class="ghost" onclick="closeModal('modalUpstream')">取消</button>
+      <button onclick="saveUpstream()">保存</button>
+    </div>
+  </div>
+</div>
+
+<script src="/js/dns.js?v=20261122c"></script>
+</body>
+</html>

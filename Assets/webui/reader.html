@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<script src="js/i18n.js"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>阅读 · AhoChat</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="/css/reader.css">
+</head>
+<body class="theme-light">
+
+<div id="app">
+
+  <!-- ============ 侧栏 / 书架 ============ -->
+  <aside id="sidebar" class="sidebar">
+    <div class="side-head">
+      <div>
+        <h1>书架</h1>
+        <p id="shelfSub">正在加载…</p>
+      </div>
+      <button id="btnCloseSide" class="icon-btn only-mobile" title="关闭"><span data-ico="close"></span></button>
+    </div>
+
+    <div class="side-actions">
+      <button id="btnUpload" class="pill">上传</button>
+      <button id="btnOpenLocal" class="pill" title="打开浏览器本地的文档，可仅阅读或存入书架">打开本地文档</button>
+      <button id="btnExplore" class="pill">发现</button>
+      <button id="btnSearch" class="pill">搜书</button>
+      <button id="btnSources" class="pill">书源</button>
+      <input type="file" id="fileInput" accept=".txt,.epub,.pdf,.fb2,.fbz,.md,.markdown,.zip,text/plain,application/pdf,application/epub+zip,application/zip" multiple hidden>
+      <input type="file" id="localDocInput" accept=".docx,.xlsx,.pptx,.doc,.xls,.ppt,.pdf,.txt,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/msword,application/vnd.ms-excel,application/vnd.ms-powerpoint,application/pdf,text/plain" hidden>
+    </div>
+
+    <div id="shelfList" class="shelf-list"></div>
+  </aside>
+
+  <!-- ============ 阅读区 ============ -->
+  <main id="main" class="main">
+
+    <header id="topbar" class="topbar">
+      <button id="btnOpenSide" class="icon-btn only-mobile" title="书架"><span data-ico="menu"></span></button>
+      <button id="btnBack" class="icon-btn only-desktop" title="返回书架">‹</button>
+      <div class="title-wrap">
+        <div id="bookTitle" class="book-title">选择一本书开始阅读</div>
+        <div id="chapterTitle" class="chapter-sub"></div>
+      </div>
+      <button id="btnToc" class="text-btn">目录</button>
+      <button id="btnMarks" class="text-btn">书签</button>
+      <button id="btnAa" class="text-btn">Aa</button>
+      <button id="btnDownloadBook" class="text-btn" title="下载整本为 txt（见「下载」中心）">下载</button>
+    </header>
+
+    <div id="reader" class="reader">
+      <article id="content" class="content">
+        <div class="welcome">
+          <div class="welcome-ico"><span data-ico="book"></span></div>
+          <h2>网页端阅读器</h2>
+          <p>左侧书架与手机 App 完全同步：字号、行距、背景色、阅读进度都共用一份。</p>
+          <p>点「上传」把 TXT / EPUB / PDF / FB2 / MD 传上来，手机 App 里立刻能看到并接着读。</p>
+          <p>PDF 按原版式一页一页显示，封面自动取第一页。</p>
+        </div>
+      </article>
+      <!-- PDF：逐页无缝纵向拼接，连续滚动阅读 -->
+      <div id="pdfView" class="pdf-view" hidden>
+        <div id="pdfPages"></div>
+      </div>
+    </div>
+
+    <footer id="bottombar" class="bottombar">
+      <button id="btnPrev" class="nav-btn">上一章</button>
+      <div class="progress-wrap">
+        <div id="progressText" class="progress-text">— / —</div>
+        <div class="progress-track"><div id="progressBar" class="progress-fill"></div></div>
+      </div>
+      <button id="btnNext" class="nav-btn">下一章</button>
+    </footer>
+  </main>
+
+  <!-- ============ 目录抽屉 ============ -->
+  <div id="tocPanel" class="drawer left">
+    <div class="drawer-head">
+      <h2>目录</h2>
+      <button class="icon-btn" data-close="tocPanel"><span data-ico="close"></span></button>
+    </div>
+    <input id="tocSearch" class="search-input" placeholder="搜索章节名">
+    <div id="tocList" class="toc-list"></div>
+  </div>
+
+  <!-- ============ 设置抽屉 ============ -->
+  <div id="setPanel" class="drawer right">
+    <div class="drawer-head">
+      <h2>阅读设置</h2>
+      <button class="icon-btn" data-close="setPanel"><span data-ico="close"></span></button>
+    </div>
+
+    <div class="set-body">
+      <div class="set-row">
+        <span class="set-label">背景</span>
+        <div id="themeDots" class="theme-dots"></div>
+      </div>
+
+      <div class="set-row">
+        <span class="set-label">字号</span>
+        <div class="stepper">
+          <button id="btnFontMinus">A−</button>
+          <span id="fontVal">19</span>
+          <button id="btnFontPlus">A＋</button>
+        </div>
+      </div>
+
+      <div class="set-row">
+        <span class="set-label">行距</span>
+        <div id="lineSeg" class="segmented">
+          <button data-v="1.5">紧凑</button>
+          <button data-v="1.85">标准</button>
+          <button data-v="2.2">宽松</button>
+          <button data-v="2.5">疏朗</button>
+        </div>
+      </div>
+
+      <div class="set-row">
+        <span class="set-label">边距</span>
+        <div id="marginSeg" class="segmented">
+          <button data-v="14">窄</button>
+          <button data-v="22">适中</button>
+          <button data-v="34">宽</button>
+        </div>
+      </div>
+
+      <div class="set-row">
+        <span class="set-label">对齐</span>
+        <div id="justifySeg" class="segmented">
+          <button data-v="1">两端</button>
+          <button data-v="0">左对齐</button>
+        </div>
+      </div>
+
+      <div class="set-row">
+        <span class="set-label">段距</span>
+        <div id="paraSeg" class="segmented">
+          <button data-v="6">紧凑</button>
+          <button data-v="14">标准</button>
+          <button data-v="24">宽松</button>
+        </div>
+      </div>
+
+      <div class="set-row">
+        <span class="set-label">缩进</span>
+        <div id="indentSeg" class="segmented">
+          <button data-v="0">无</button>
+          <button data-v="2">2 字</button>
+        </div>
+      </div>
+
+      <div class="set-row">
+        <span class="set-label">字体</span>
+        <div id="fontSeg" class="segmented">
+          <button data-v="serif">宋体</button>
+          <button data-v="sans">黑体</button>
+          <button data-v="system">系统</button>
+        </div>
+      </div>
+
+      <div class="set-row">
+        <span class="set-label">字重</span>
+        <div id="boldSeg" class="segmented">
+          <button data-v="0">常规</button>
+          <button data-v="1">加粗</button>
+        </div>
+      </div>
+
+      <p class="set-tip">设置会自动保存，并同步到手机 App。阅读时点屏幕中间可隐藏工具栏。</p>
+    </div>
+  </div>
+
+  <!-- ============ 书源面板 ============ -->
+  <div id="srcPanel" class="modal">
+    <div class="modal-card">
+      <div class="drawer-head">
+        <h2>书源</h2>
+        <button class="icon-btn" data-close="srcPanel"><span data-ico="close"></span></button>
+      </div>
+      <div id="srcList" class="src-list"></div>
+      <div class="src-actions">
+        <label class="pill file-pill">导入文件<input type="file" id="srcFile" accept=".json,.txt" hidden></label>
+        <button id="btnPasteSrc" class="pill">粘贴 JSON</button>
+      </div>
+      <textarea id="srcText" class="src-text" placeholder="在这里粘贴 legado 书源 JSON（数组或单个对象），然后点「导入」"></textarea>
+      <button id="btnImportSrc" class="primary-btn">导入</button>
+    </div>
+  </div>
+
+  <!-- ============ 搜索面板 ============ -->
+  <div id="searchPanel" class="modal">
+    <div class="modal-card">
+      <div class="drawer-head">
+        <h2>搜索网络书籍</h2>
+        <button class="icon-btn" data-close="searchPanel"><span data-ico="close"></span></button>
+      </div>
+      <div class="search-row">
+        <input id="searchKey" class="search-input" placeholder="书名或作者">
+        <button id="btnDoSearch" class="primary-btn small">搜索</button>
+      </div>
+      <div id="searchList" class="src-list"></div>
+    </div>
+  </div>
+
+  <!-- ============ 发现面板 ============ -->
+  <div id="explorePanel" class="modal">
+    <div class="modal-card">
+      <div class="drawer-head">
+        <h2 id="exTitle">发现</h2>
+        <button class="icon-btn" data-close="explorePanel"><span data-ico="close"></span></button>
+      </div>
+      <div id="exCrumbs" class="ex-crumbs"></div>
+      <div id="exList" class="src-list"></div>
+    </div>
+  </div>
+
+  <!-- ============ 书签面板 ============ -->
+  <div id="marksPanel" class="modal">
+    <div class="modal-card">
+      <div class="drawer-head">
+        <h2>书签</h2>
+        <button class="icon-btn" data-close="marksPanel"><span data-ico="close"></span></button>
+      </div>
+      <button id="btnAddMark" class="primary-btn small" style="margin:0 16px 8px;width:calc(100% - 32px)">＋ 在当前位置添加书签</button>
+      <div id="marksList" class="src-list"></div>
+    </div>
+  </div>
+
+  <!-- ============ 文档内嵌阅读层（本地文件 / 书架文档都在本页面打开） ============ -->
+  <div id="docViewer" class="doc-viewer" hidden>
+    <div class="dv-bar">
+      <button id="dvBack" class="icon-btn" title="返回书架"><span data-ico="arrow-left"></span></button>
+      <span id="dvTitle" class="dv-title"></span>
+      <button id="dvFull" class="icon-btn" title="全屏">⛶</button>
+      <button id="dvClose" class="icon-btn" title="关闭"><span data-ico="close"></span></button>
+    </div>
+    <iframe id="docFrame" class="dv-frame" title="文档阅读"></iframe>
+  </div>
+
+  <div id="toast" class="toast"></div>
+  <div id="mask" class="mask"></div>
+</div>
+
+<script src="/js/icons.js"></script>
+<script src="/js/reader.js"></script>
+</body>
+</html>

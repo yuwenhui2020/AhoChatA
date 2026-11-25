@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  安卓被控端的无障碍服务配置（参照 rustdesk 的 accessibility_service_config.xml）：
+
+  · canPerformGestures —— 点击/滑动/长按全靠它，缺了就只能看不能控；
+  · canRetrieveWindowContent + flagReportViewIds —— 找得到"当前聚焦的输入框"，
+    才能把查看端发来的文字打进手机应用里；
+  · accessibilityEventTypes 只订阅窗口变化：订阅 typeAllMask 会被系统按高频事件刷屏，
+    耗电且没有用途（我们只被动等输入，不靠事件驱动）。
+-->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagDefault|flagReportViewIds|flagRetrieveInteractiveWindows"
+    android:notificationTimeout="100"
+    android:canRetrieveWindowContent="true"
+    android:canPerformGestures="true"
+    android:description="@string/rd_accessibility_desc" />

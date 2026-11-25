@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <script src="../js/i18n.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>阅读 · Mchat</title>
+    <link rel="stylesheet" href="reader.css">
+</head>
+<body>
+<div id="app">
+
+    <!-- ===================== 顶栏 ===================== -->
+    <header class="r-topbar" id="rTopbar">
+        <button class="r-icon" id="btnBack">‹ 聊天</button>
+        <div class="r-title" id="rTitle">书架</div>
+        <div class="r-actions">
+            <button class="r-icon" id="btnSearch" title="搜索书籍"><span data-ico="search"></span></button>
+            <button class="r-icon" id="btnSources" title="书源管理">书源</button>
+            <button class="r-icon" id="btnSettings" title="阅读设置"><span data-ico="gear"></span></button>
+        </div>
+    </header>
+
+    <!-- ===================== 书架 ===================== -->
+    <main class="r-view" id="shelfView">
+        <div class="r-shelf-tools">
+            <button class="r-btn primary" id="btnImport">＋ 导入本地书籍</button>
+            <button class="r-btn" id="btnImportShare">从共享目录</button>
+            <div class="r-toggle" id="shelfToggle">
+                <button data-mode="grid" class="active">网格</button>
+                <button data-mode="list">列表</button>
+            </div>
+        </div>
+        <div class="r-search-row hidden" id="searchRow">
+            <input type="search" id="searchInput" placeholder="输入书名或作者搜索（联网书源）">
+            <button class="r-btn" id="btnSearchGo">搜索</button>
+        </div>
+        <div id="searchResults" class="r-book-grid hidden"></div>
+        <div id="bookGrid" class="r-book-grid"></div>
+        <div id="shelfEmpty" class="r-empty hidden">
+            <div class="r-empty-ico" data-ico="books"></div>
+            <div>书架还是空的</div>
+            <div class="r-empty-sub">点击「导入本地书籍」添加 TXT / EPUB，或到「书源」添加在线书源后联网搜索。</div>
+        </div>
+    </main>
+
+    <!-- ===================== 阅读器 ===================== -->
+    <section class="r-view hidden" id="readerView">
+        <div class="r-reader-scroll" id="readerScroll">
+            <article class="r-reader" id="readerContent"></article>
+        </div>
+        <div class="r-reader-bar" id="readerBar">
+            <button class="r-rbtn" id="btnToc">目录</button>
+            <button class="r-rbtn" id="btnBookmark">书签</button>
+            <button class="r-rbtn" id="btnSpeak">朗读</button>
+            <button class="r-rbtn" id="btnReaderSettings">排版</button>
+            <span class="r-rprog" id="readerProgress">0%</span>
+        </div>
+        <div class="r-toast" id="readerToast"></div>
+    </section>
+
+    <!-- ===================== 书源管理 ===================== -->
+    <section class="r-view hidden" id="sourcesView">
+        <div class="r-sources-tools">
+            <button class="r-btn primary" id="btnAddSource">＋ 新建书源</button>
+            <button class="r-btn" id="btnImportSource">导入书源 JSON</button>
+            <button class="r-btn" id="btnExportSource">导出</button>
+        </div>
+        <div id="sourceList" class="r-source-list"></div>
+    </section>
+
+    <!-- ===================== 阅读设置抽屉 ===================== -->
+    <div class="r-drawer hidden" id="settingsDrawer">
+        <div class="r-drawer-head"><span>阅读设置</span><button class="r-icon" data-close="settingsDrawer"><span data-ico="close"></span></button></div>
+        <div class="r-drawer-body">
+            <div class="r-set-row">
+                <label>字号</label>
+                <input type="range" id="setFontSize" min="14" max="32" step="1">
+                <span id="setFontSizeVal"></span>
+            </div>
+            <div class="r-set-row">
+                <label>行距</label>
+                <input type="range" id="setLineHeight" min="1.4" max="2.4" step="0.1">
+                <span id="setLineHeightVal"></span>
+            </div>
+            <div class="r-set-row">
+                <label>段距</label>
+                <input type="range" id="setPara" min="0" max="2" step="0.1">
+                <span id="setParaVal"></span>
+            </div>
+            <div class="r-set-row">
+                <label>页边距</label>
+                <input type="range" id="setMargin" min="12" max="48" step="2">
+                <span id="setMarginVal"></span>
+            </div>
+            <div class="r-set-row">
+                <label>两端对齐</label>
+                <input type="checkbox" id="setJustify">
+            </div>
+            <div class="r-set-row">
+                <label>翻页模式</label>
+                <div class="r-seg" id="setMode">
+                    <button data-mode="scroll" class="active">滚动</button>
+                    <button data-mode="page">分页</button>
+                </div>
+            </div>
+            <div class="r-set-row">
+                <label>主题</label>
+                <div class="r-themes" id="setTheme">
+                    <button data-theme="day" class="active" style="background:#f5f1e8"></button>
+                    <button data-theme="night" style="background:#1b1b1b"></button>
+                    <button data-theme="green" style="background:#c7e8c7"></button>
+                    <button data-theme="pink" style="background:#f3d9e0"></button>
+                    <button data-theme="blue" style="background:#dbe7f3"></button>
+                </div>
+            </div>
+            <div class="r-set-row col">
+                <label>字体</label>
+                <select id="setFont">
+                    <option value="">系统默认</option>
+                    <option value="'Noto Serif SC',serif">思源宋体（衬线）</option>
+                    <option value="serif">衬线 Serif</option>
+                    <option value="sans-serif">黑体 Sans</option>
+                    <option value="'KaiTi','STKaiti',serif">楷体</option>
+                </select>
+            </div>
+            <div class="r-set-row col">
+                <label>净化规则（逐行正则→替换，留空=删除）</label>
+                <textarea id="setClean" rows="4" placeholder="例：\s*广告\s*\n  （每行一条，格式 正则 或 正则→替换）"></textarea>
+                <button class="r-btn small" id="btnSaveClean">保存净化规则</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===================== 目录抽屉 ===================== -->
+    <div class="r-drawer left hidden" id="tocDrawer">
+        <div class="r-drawer-head"><span id="tocTitle">目录</span><button class="r-icon" data-close="tocDrawer"><span data-ico="close"></span></button></div>
+        <div class="r-drawer-body"><div id="tocList" class="r-toc-list"></div></div>
+    </div>
+
+    <!-- ===================== 书签抽屉 ===================== -->
+    <div class="r-drawer left hidden" id="bookmarkDrawer">
+        <div class="r-drawer-head"><span>书签</span><button class="r-icon" data-close="bookmarkDrawer"><span data-ico="close"></span></button></div>
+        <div class="r-drawer-body"><div id="bookmarkList" class="r-bookmark-list"></div></div>
+    </div>
+
+    <!-- ===================== 遮罩 ===================== -->
+    <div class="r-mask hidden" id="rMask"></div>
+
+    <!-- ===================== 书源编辑弹窗 ===================== -->
+    <div class="r-modal hidden" id="sourceModal">
+        <div class="r-modal-box">
+            <div class="r-modal-head"><span id="sourceModalTitle">编辑书源</span><button class="r-icon" data-close="sourceModal"><span data-ico="close"></span></button></div>
+            <div class="r-modal-body">
+                <textarea id="sourceJson" rows="18" spellcheck="false" placeholder="粘贴 legado 书源 JSON（单个对象或数组）"></textarea>
+                <div class="r-modal-tip">支持标准 legado 书源格式：bookSourceUrl / bookSourceName / searchUrl / ruleSearch / ruleBookInfo / ruleToc / ruleContent / header 等。联网抓取由本机代理完成，无需 legado 服务器。</div>
+            </div>
+            <div class="r-modal-foot">
+                <button class="r-btn small ghost" data-close="sourceModal">取消</button>
+                <button class="r-btn small primary" id="btnSaveSource">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===================== 从共享目录导入弹窗 ===================== -->
+    <div class="r-modal hidden" id="shareModal">
+        <div class="r-modal-box">
+            <div class="r-modal-head"><span>从共享目录导入</span><button class="r-icon" data-close="shareModal"><span data-ico="close"></span></button></div>
+            <div class="r-modal-body">
+                <div class="r-share-path" id="sharePath">/</div>
+                <div id="shareList" class="r-share-list"></div>
+            </div>
+            <div class="r-modal-foot">
+                <button class="r-btn small" id="btnShareUp">上级</button>
+                <button class="r-btn small ghost" data-close="shareModal">关闭</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 隐藏文件选择器 -->
+    <input type="file" id="fileInput" class="hidden" accept=".txt,.epub,.text" multiple>
+
+    <!-- 搜索结果容器已在书架内 -->
+</div>
+
+<script src="/js/icons.js"></script>
+<script src="store.js"></script>
+<script src="parser.js"></script>
+<script src="booksource.js"></script>
+<script src="default-sources.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

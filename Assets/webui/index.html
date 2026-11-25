@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+<script src="js/i18n.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>聊天 · 网页端</title>
+    <link rel="stylesheet" href="css/web.css">
+    <script>
+    /* 主题（日间/夜间）：与 app 端统一用 documentElement[data-theme] 切换，先于渲染避免闪烁 */
+    (function () {
+      var KEY = 'mchat_theme';
+      function get() { try { return localStorage.getItem(KEY) || 'auto'; } catch (e) { return 'auto'; } }
+      function sysDark() { return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches; }
+            function resolve(t) {
+            t = t || get();
+            if (t === 'auto') return sysDark() ? 'dark' : 'light';
+            if (t === 'night') return 'dark';   // 兼容后端旧注入值
+            if (t === 'day') return 'light';
+            return t;
+        }
+      function apply(t) { var r = resolve(t); document.documentElement.setAttribute('data-theme', r); return r; }
+      window.MTheme = {
+        get: get, resolve: resolve, apply: apply,
+        set: function (t) { try { localStorage.setItem(KEY, t); } catch (e) {} return apply(t); },
+        toggle: function () { var cur = resolve(); return this.set(cur === 'dark' ? 'light' : 'dark'); }
+      };
+      apply();
+    })();
+    </script>
+</head>
+<body>
+
+<!-- 网页端只有聊天界面，没有侧栏 -->
+<div id="chatView" class="view">
+    <header class="topbar">
+        <button id="btnMenu" class="icon-btn" aria-label="菜单"><span data-ico="menu"></span></button>
+        <button id="btnTheme" class="icon-btn" aria-label="日间/夜间主题"><span data-ico="moon"></span></button>
+        <div class="topbar-title">
+            <div class="title">聊天</div>
+            <div id="peerStatus" class="subtitle">正在连接…</div>
+        </div>
+        <button id="btnQaul" class="qaul-badge" title="qaul 网络节点">qaul —</button>
+        <button id="btnIdentity" class="icon-btn" aria-label="身份"><span data-ico="key"></span></button>
+        <button id="btnTools" class="icon-btn" aria-label="工具"><span data-ico="tools"></span></button>
+        <a href="/reader" class="topbar-link" aria-label="阅读"><span data-ico="book"></span></a>
+        <a href="/media" class="topbar-link" aria-label="影音"><span data-ico="video"></span></a>
+        <a href="/gps" class="topbar-link" aria-label="位置共享" title="GPS 共享位置">◎</a>
+        <a href="/settings" class="topbar-link" aria-label="设置" title="设置">⚙</a>
+        <a href="/download" class="topbar-link" aria-label="下载"><span data-ico="download"></span></a>
+        <a href="/dns" class="topbar-link" aria-label="DNS 管理" title="内置 DNS 服务器设置">🔍</a>
+        <div id="guestTag" class="guest-tag" style="display:none;"></div>
+    </header>
+
+    <!-- 房间条：房间号即频道（默认 mesh），＋ 可加入任意房间号 -->
+    <div id="convBar" class="conv-bar">
+        <div id="convChips" class="conv-chips"></div>
+    </div>
+
+    <main id="messageList" class="message-list"></main>
+
+    <footer class="composer">
+        <div id="attachBar" class="attach-bar hidden">
+            <button class="attach-item" data-act="voice"><span class="ai-ico" data-ico="mic"></span><span>语音</span></button>
+            <button class="attach-item" data-act="url"><span class="ai-ico" data-ico="link"></span><span>链接</span></button>
+            <button class="attach-item" data-act="pic"><span class="ai-ico" data-ico="image"></span><span>图片</span></button>
+            <button class="attach-item" data-act="video"><span class="ai-ico" data-ico="video"></span><span>视频</span></button>
+            <button class="attach-item" data-act="music"><span class="ai-ico" data-ico="music"></span><span>音乐</span></button>
+            <button class="attach-item" data-act="notice"><span class="ai-ico" data-ico="bell"></span><span>通知</span></button>
+        </div>
+        <div class="composer-row">
+            <button id="btnAttach" class="round-btn" aria-label="更多"><span data-ico="plus" data-ico-size="22"></span></button>
+            <textarea id="msgInput" rows="1" placeholder="输入消息"></textarea>
+            <button id="btnSend" class="send-btn" aria-label="发送">发送</button>
+            <button id="btnControl" class="control-btn" aria-label="功能控制">功能控制</button>
+        </div>
+        <div id="controlMenu" class="control-menu hidden" aria-hidden="true">
+            <div class="control-menu-head">
+                <span>功能控制</span>
+                <div id="controlGrid" class="control-grid"></div>
+                <button id="btnControlClose" class="control-menu-close" aria-label="关闭"><span data-ico="close"></span></button>
+            </div>
+            <div class="dial-wrap">
+                <div class="dial" id="controlDial">
+                    <button class="dial-arc arc-top"    data-cmd="音量加"><span data-ico="plus" data-ico-size="22"></span></button>
+                    <button class="dial-arc arc-right"  data-cmd="下一曲"><span data-ico="next" data-ico-size="22"></span></button>
+                    <button class="dial-arc arc-bottom" data-cmd="音量减"><span data-ico="minus" data-ico-size="22"></span></button>
+                    <button class="dial-arc arc-left"   data-cmd="上一曲"><span data-ico="prev" data-ico-size="22"></span></button>
+                    <button class="dial-center" data-cmd="播放暂停"><span data-ico="playpause" data-ico-size="22"></span></button>
+                </div>
+            </div>
+        </div>
+    </footer>
+</div>
+
+<!-- 内置视频播放器 -->
+<div id="videoPlayer" class="overlay video-overlay">
+    <button class="overlay-close" data-close="videoPlayer"><span data-ico="close"></span></button>
+    <video id="videoEl" controls playsinline></video>
+    <div id="videoTitle" class="overlay-title"></div>
+</div>
+
+<!-- 图片查看器 -->
+<div id="imageViewer" class="overlay image-overlay">
+    <button class="overlay-close" data-close="imageViewer"><span data-ico="close"></span></button>
+    <img id="imageEl" alt="">
+</div>
+
+<!-- 音乐播放器 -->
+<div id="musicPlayer" class="overlay music-overlay">
+    <button class="overlay-close" data-close="musicPlayer"><span data-ico="close"></span></button>
+    <div class="music-stage">
+        <div class="music-cover-wrap">
+            <img id="musicCover" class="music-cover" alt="">
+        </div>
+        <div id="musicName" class="music-name"></div>
+        <div id="musicArtist" class="music-artist"></div>
+        <div id="lyricBox" class="lyric-box"></div>
+        <div class="music-controls">
+            <div class="progress-row">
+                <span id="musicCur" class="time">00:00</span>
+                <div id="musicBar" class="progress-track"><div id="musicFill" class="progress-fill"></div></div>
+                <span id="musicDur" class="time">00:00</span>
+            </div>
+            <button id="musicToggle" class="play-btn"><span data-ico="play" data-ico-size="22"></span></button>
+        </div>
+    </div>
+    <audio id="audioEl"></audio>
+</div>
+
+<!-- ===================== 工具面板：文件 / 群组 / 频道 ===================== -->
+<div id="toolsOverlay" class="lc-tools-mask hidden">
+    <div class="lc-tools-box">
+        <div class="lc-tools-head">
+            <span>工具</span>
+            <button id="toolsClose" class="lc-tools-close"><span data-ico="close"></span></button>
+        </div>
+        <div class="lc-tools-tabs" id="toolsTabs">
+            <button class="lc-tools-tab active" data-tab="files">文件</button>
+            <button class="lc-tools-tab" data-tab="groups">群组</button>
+            <button class="lc-tools-tab" data-tab="channel">频道</button>
+        </div>
+        <div class="lc-tools-body">
+            <section class="lc-tools-sec active" data-sec="files">
+                <div class="lc-tools-row">
+                    <button id="fileUp" class="lc-tools-btn"><span data-ico="up"></span> 上级</button>
+                    <span id="filePath" class="lc-tools-path">/</span>
+                    <label class="lc-tools-btn"><span data-ico="up"></span> 上传<input type="file" id="fileUpload" hidden></label>
+                </div>
+                <div id="fileList" class="lc-tools-list"></div>
+            </section>
+            <section class="lc-tools-sec" data-sec="groups">
+                <div class="lc-tools-row">
+                    <input id="groupName" class="lc-tools-input" placeholder="新群组名称">
+                    <button id="groupCreate" class="lc-tools-btn"><span data-ico="plus"></span> 建群</button>
+                </div>
+                <div id="groupList" class="lc-tools-list"></div>
+            </section>
+            <section class="lc-tools-sec" data-sec="channel">
+                <div id="channelStatus" class="lc-tools-list"></div>
+                <div class="lc-tools-row">
+                    <span class="lc-tools-kv"><span>双通道</span><b id="dualState">—</b></span>
+                    <button id="dualToggle" class="lc-tools-btn">切换</button>
+                </div>
+            </section>
+        </div>
+    </div>
+</div>
+
+<script src="/js/icons.js"></script>
+<script src="/js/hls.min.js"></script>
+<script src="js/web.js"></script>
+</body>
+</html>

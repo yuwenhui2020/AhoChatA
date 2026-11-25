@@ -1,0 +1,7 @@
+适用于 .NET Framework MSBuild 版本 17.14.23+b0019275e
+
+  正在确定要还原的项目…
+C:\root\githubcode\AhoChatA\AhoChatA.csproj : warning NU1605: 检测到包降级: Xamarin.AndroidX.Core 从 1.9.0.2 降级到 1.9.0。直接从项目引用包以选择不同版本。 
+C:\root\githubcode\AhoChatA\AhoChatA.csproj : warning NU1605:  AhoChatA -> Xamarin.AndroidX.AppCompat 1.6.1 -> Xamarin.AndroidX.Core (>= 1.9.0.2) 
+C:\root\githubcode\AhoChatA\AhoChatA.csproj : warning NU1605:  AhoChatA -> Xamarin.AndroidX.Core (>= 1.9.0)
+  已还原 C:\root\githubcode\AhoChatA\AhoChatA.csproj (用时 14.98 秒)。

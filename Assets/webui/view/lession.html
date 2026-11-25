@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<script src="../js/i18n.js"></script>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<meta name="renderer" content="webkit">
+<meta http-equiv="Cache-Control" content="no-siteapp" />
+<meta http-equiv="Cache-Control" content="no-transform " />
+<meta http-equiv="X-UA-Compatible" content="IE=Edge,chrome=1" >
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+    <script src="/static/js/html2canvas.min.js"></script>
+    <title>智能课程表查看器</title>
+    <style>
+        :root {
+            --primary-color: #6C9BCF;
+            --hover-color: #4A7AB3;
+            --background: #F9FBFD;
+            --surface: #FFFFFF;
+            --border: #E0E5EC;
+            --text-primary: #2D3748;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            max-width: 1000px;
+            margin: 2rem auto;
+            padding: 0 1.5rem;
+            background: var(--background);
+            color: var(--text-primary);
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+            gap: 1rem;
+        }
+
+        .date-controls {
+            display: flex;
+            align-items: center;
+            gap: 0.8rem;
+        }
+
+        .nav-button {
+            background: var(--primary-color);
+            color: white;
+            padding: 0.6rem 1.2rem;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .nav-button:hover {
+            background: var(--hover-color);
+        }
+
+        .date-picker {
+            padding: 0.6rem 1rem;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            background: var(--surface);
+            font-size: 1rem;
+            color: var(--text-primary);
+            width: 220px;
+        }
+
+        .upload-area {
+            border: 2px dashed var(--border);
+            border-radius: 12px;
+            padding: 2.5rem 1rem;
+            text-align: center;
+            margin: 2rem 0;
+            background: var(--surface);
+            transition: all 0.2s ease;
+        }
+
+        .upload-area.dragover {
+            border-color: var(--primary-color);
+            background: rgba(108, 155, 207, 0.05);
+        }
+
+        #uploadInput {
+            display: none;
+        }
+
+        .upload-btn {
+            background: var(--primary-color);
+            color: white;
+            padding: 0.8rem 1.8rem;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: background 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .upload-btn:hover {
+            background: var(--hover-color);
+        }
+
+        .course-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1.5rem;
+            background: var(--surface);
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        }
+
+        .course-table th,
+        .course-table td {
+            padding: 14px 20px;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .course-table th {
+            background: var(--primary-color);
+            color: white;
+            font-weight: 600;
+        }
+
+        .course-table tr:last-child td {
+            border-bottom: none;
+        }
+
+        .course-table tr:hover {
+            background: #f8fafc;
+        }
+
+        .status-message {
+            padding: 1.2rem;
+            border-radius: 8px;
+            margin: 1.5rem 0;
+            background: var(--surface);
+            border: 1px solid var(--border);
+        }
+
+        .loading {
+            color: #4a5568;
+            background: #f8fafc;
+        }
+
+        .error {
+            background: #fff5f5;
+            color: #c53030;
+            border-color: #fed7d7;
+        }
+
+        .calendar-icon {
+            width: 20px;
+            height: 20px;
+            vertical-align: middle;
+            margin-right: 0.5rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1 onclick="screenshot()">在线课程表</h1>
+        <div class="date-controls">
+            <button class="nav-button" id="prevDay">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="white">
+                    <path d="M15.41 16.59L10.83 12l4.58-4.59L14 6l-6 6 6 6 1.41-1.41z"/>
+                </svg>
+                前一天
+            </button>
+            <input type="date" id="datePicker" class="date-picker">
+            <button class="nav-button" id="nextDay">
+                后一天
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="white">
+                    <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z"/>
+                </svg>
+            </button>
+        </div>
+    </div>
+
+
+    <div id="uploadContainer">
+        <div class="upload-area" id="dropZone">
+            <div style="margin-bottom: 1rem;">
+                <svg class="calendar-icon" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M19 4h-1V2h-2v2H8V2H6v2H5c-1.11 0-1.99.9-1.99 2L3 20c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V10h14v10zm0-12H5V6h14v2z"/>
+                </svg>
+            </div>
+            <p style="margin-bottom: 1.5rem; color: #4a5568;">拖放.xls文件至此或</p>
+            <label for="uploadInput" class="upload-btn">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="white">
+                    <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
+                </svg>
+                选择课程表文件
+            </label>
+            <input type="file" id="uploadInput" accept=".xls">
+        </div>
+    </div>
+
+    <div id="courseList"></div>
+
+    <script src="static/js/xlsx.full.min.js"></script>
+    <script>
+            const CONFIG = {
+            startDate: '2025-03-03',
+            classTimes: {
+                1: ['08:00', '08:45'],
+                2: ['09:00', '09:45'],
+                3: ['10:00', '10:45'],
+                4: ['11:00', '11:45'],
+                5: ['14:00', '14:45'],
+                6: ['15:00', '15:45'],
+                7: ['16:00', '16:45'],
+                8: ['17:00', '17:45'],
+                9: ['19:00', '19:45'],
+                10: ['20:00', '20:45'],
+                11: ['21:00', '21:45'],
+                12: ['22:00', '22:45']
+            }
+        };
+
+        let currentWorkbook = null;
+
+        // 在初始化函数中添加按钮事件监听
+        function initDatePicker() {
+            const datePicker = document.getElementById('datePicker');
+            const prevButton = document.getElementById('prevDay');
+            const nextButton = document.getElementById('nextDay');
+
+            // 设置默认日期为次日
+            const tomorrow = new Date();
+            tomorrow.setDate(tomorrow.getDate() + 1);
+            datePicker.value = tomorrow.toISOString().split('T')[0];
+
+            // 日期变更处理
+            const handleDateChange = () => {
+                if(currentWorkbook) processWorkbook(currentWorkbook);
+            };
+
+            // 事件监听
+            datePicker.addEventListener('change', handleDateChange);
+            
+            prevButton.addEventListener('click', () => {
+                const currentDate = new Date(datePicker.value);
+                currentDate.setDate(currentDate.getDate() - 1);
+                datePicker.value = currentDate.toISOString().split('T')[0];
+                handleDateChange();
+            });
+
+            nextButton.addEventListener('click', () => {
+                const currentDate = new Date(datePicker.value);
+                currentDate.setDate(currentDate.getDate() + 1);
+                datePicker.value = currentDate.toISOString().split('T')[0];
+                handleDateChange();
+            });
+        }
+
+        // 主处理流程
+        function processWorkbook(workbook) {
+            try {
+                const selectedDate = new Date(document.getElementById('datePicker').value);
+                const courses = parseSchedule(workbook.Sheets[workbook.SheetNames[0]], selectedDate);
+                renderCourses(courses, selectedDate);
+            } catch (error) {
+                showStatus(`数据处理失败: ${error.message}`, 'error');
+            }
+        }
+
+        // 增强的课程解析逻辑
+        function parseSchedule(sheet, date) {
+            const coursesMap = new Map();
+            const currentWeek = getCurrentWeek(date);
+            const weekDay = date.getDay() || 7; // 转换为1-7（周一至周日）
+            const col = String.fromCharCode(66 + weekDay - 1); // B-H列
+
+            if(currentWeek < 1) {
+                showStatus('所选日期早于学期开始日期', 'error');
+                return [];
+            }
+
+            for(let row = 3; row <= 10; row++) {
+                const cell = sheet[`${col}${row}`];
+                if(!cell || !cell.v) continue;
+
+                const lines = String(cell.v).split('\n')
+                                  .map(l => l.trim())
+                                  .filter(l => l);
+                if(lines.length < 4) continue;
+
+                const [courseName, teacher, schedule, location] = lines;
+                const {weeks, sessions} = parseScheduleInfo(schedule);
+                
+                if(!weeks.includes(currentWeek)) continue;
+
+                const courseKey = `${courseName}|${teacher}|${location}|${sessions.join('-')}`;
+                coursesMap.set(courseKey, {
+                    name: courseName,
+                    teacher,
+                    location,
+                    sessions: [...new Set(sessions)].sort((a,b) => a - b),
+                    order: Math.min(...sessions)
+                });
+            }
+
+            return Array.from(coursesMap.values()).sort((a,b) => a.order - b.order);
+        }
+
+        // 改进的时间解析方法
+        function parseScheduleInfo(str) {
+            const match = str.match(/(\d+-\d+|\d+).*?\[(\d+(-\d+)*)节\]/);
+            if(!match) return {weeks:[], sessions:[]};
+
+            // 解析周数
+            const [startWeek, endWeek = startWeek] = match[1].split('-').map(Number);
+            const weeks = Array.from({length: endWeek - startWeek + 1}, (_,i) => startWeek + i);
+
+            // 解析节次
+            const sessions = [];
+            const sessionParts = match[2].split('-').map(Number);
+            for(let i = 0; i < sessionParts.length; i++) {
+                if(i < sessionParts.length - 1 && sessionParts[i+1] > sessionParts[i]+1) {
+                    sessions.push(sessionParts[i]);
+                } else {
+                    const end = sessionParts[i+1] || sessionParts[i];
+                    for(let j = sessionParts[i]; j <= end; j++) {
+                        sessions.push(j);
+                    }
+                    i++;
+                }
+            }
+
+            return { weeks, sessions: [...new Set(sessions)] };
+        }
+
+        // 精确的周数计算
+        function getCurrentWeek(date) {
+            const start = new Date(CONFIG.startDate);
+            start.setHours(0,0,0,0);
+            const target = new Date(date);
+            target.setHours(0,0,0,0);
+            
+            if(target < start) return 0;
+            
+            const diffDays = Math.floor((target - start) / 86400000);
+            return Math.floor(diffDays / 7) + 1;
+        }
+
+        // 课程渲染方法
+        function renderCourses(courses, date) {
+            const container = document.getElementById('courseList');
+            const options = { year: 'numeric', month: 'long', day: 'numeric' };
+            const dateString = date.toLocaleDateString('zh-CN', options);
+
+            if(courses.length === 0) {
+                container.innerHTML = `
+                    <div class="status-message">
+                        ${dateString} 无课程安排
+                    </div>
+                `;
+                return;
+            }
+
+            const rows = courses.map(course => `
+                <tr>
+                    <td>${getTimeRange(course.sessions)}</td>
+                    <td>${course.name}</td>
+                    <td>${course.location}</td>
+                    <td>${course.teacher}</td>
+                </tr>
+            `).join('');
+
+            container.innerHTML = `
+                <h2>${dateString} 课程安排</h2>
+                <table class="course-table">
+                    <thead>
+                        <tr>
+                            <th>上课时间</th>
+                            <th>课程名称</th>
+                            <th>上课地点</th>
+                            <th>授课教师</th>
+                        </tr>
+                    </thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            `;
+        }
+
+        // 获取时间范围
+        function getTimeRange(sessions) {
+            const sorted = sessions.sort((a,b) => a - b);
+            const first = sorted[0];
+            const last = sorted[sorted.length-1];
+            return `${CONFIG.classTimes[first][0]} - ${CONFIG.classTimes[last][1]}`;
+        }
+
+        // 状态显示方法
+        function showStatus(message, type = 'info') {
+            const container = document.getElementById('courseList');
+            container.innerHTML = `
+                <div class="status-message ${type}">
+                    ${message}
+                </div>
+            `;
+        }
+
+        // 初始化事件监听
+        function initUploader() {
+            const dropZone = document.getElementById('dropZone');
+            const fileInput = document.getElementById('uploadInput');
+
+            // 拖放处理
+            dropZone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                dropZone.classList.add('dragover');
+            document.getElementById("uploadContainer").style.display="none";
+            });
+
+            dropZone.addEventListener('dragleave', () => {
+                dropZone.classList.remove('dragover');
+            document.getElementById("uploadContainer").style.display="none";
+            });
+
+            dropZone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dropZone.classList.remove('dragover');
+                handleFile(e.dataTransfer.files[0]);
+            document.getElementById("uploadContainer").style.display="none";
+            });
+
+            // 文件选择处理
+            fileInput.addEventListener('change', (e) => {
+                handleFile(e.target.files[0]);
+            document.getElementById("uploadContainer").style.display="none";
+            });
+        }
+
+        // 文件处理
+        function handleFile(file) {
+            if(!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    currentWorkbook = XLSX.read(e.target.result, {type: 'array'});
+                    processWorkbook(currentWorkbook);
+            document.getElementById("uploadContainer").style.display="none";
+                } catch (error) {
+                    showStatus(`文件解析失败: ${error.message}`, 'error');
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        // 初始化函数更新
+        window.addEventListener('DOMContentLoaded', () => {
+            initDatePicker(); // 修改后的初始化函数
+            initUploader();
+            
+            // 检查URL参数
+            const urlParams = new URLSearchParams(window.location.search);
+            const fileUrl = urlParams.get('file');
+            
+            if(fileUrl) {
+            document.getElementById("uploadContainer").style.display="none";
+                fetch(fileUrl)
+                    .then(res => res.arrayBuffer())
+                    .then(data => {
+                        currentWorkbook = XLSX.read(data, {type: 'array'});
+                        processWorkbook(currentWorkbook);
+                    })
+                    .catch(() => showStatus('远程文件加载失败', 'error'));
+            }
+        });
+    </script>
+    <script>
+    // 截图函数
+    function screenshot() {
+        // 配置选项（可根据需求调整）
+        const options = {
+            logging: false,          // 关闭调试日志
+            useCORS: true,           // 允许跨域资源
+            scale: 1,                // 缩放比例
+        };
+        // 执行截图（捕获整个body）
+        html2canvas(document.body, options).then(canvas => {
+            // 将 Canvas 转为图片
+            const imgData = canvas.toDataURL('image/png');
+
+        // 在页面中显示截图预览
+        //const preview = document.createElement('img');
+        //preview.src = imgData;
+        //document.body.appendChild(preview);
+
+            // 创建下载链接
+            const link = document.createElement('a');
+            link.download = 'screenshot.png';
+            link.href = imgData;
+            link.click();
+        }).catch(err => {
+            console.error('截图失败:', err);
+        });
+    }
+    </script>
+</body>
+</html>

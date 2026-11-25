@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  冷启动「预加载界面」：android:windowBackground。
+  系统在进程起来、Activity 完成测量之前就会画这个 drawable，
+  所以用户点图标的瞬间看到的就是它，而不是白屏/黑屏——
+  这就是「启动界面变快」的关键：不是真的更快，而是**立刻有反馈**。
+
+  设计成和正式首页一致的浅灰底 + 居中的品牌标记（蓝色圆角方块 + 白色对话缺口），
+  颜色与首页背景 #f2f3f5 完全相同，所以从启动窗口切到真正界面时没有色差跳变。
+-->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- 底色：与首页背景一致，避免切换时闪一下 -->
+    <item android:drawable="@color/lc_page_bg" />
+
+    <!-- 品牌标记：居中 -->
+    <item android:gravity="center">
+        <shape android:shape="rectangle">
+            <solid android:color="@color/lc_accent" />
+            <corners android:radius="18dp" />
+            <size android:width="72dp" android:height="72dp" />
+        </shape>
+    </item>
+
+    <!-- 标记上的白色对话气泡缺口（用一个小白圆 + 尾巴表达「聊天」） -->
+    <item android:gravity="center">
+        <layer-list>
+            <item android:gravity="center">
+                <shape android:shape="rectangle">
+                    <solid android:color="#ffffffff" />
+                    <corners android:radius="6dp" />
+                    <size android:width="30dp" android:height="24dp" />
+                </shape>
+            </item>
+        </layer-list>
+    </item>
+
+</layer-list>

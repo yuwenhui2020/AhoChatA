@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 通知拖动条的一个透明分段（点击即跳到对应进度）。宽 0 + weight 1，由父 LinearLayout 均分。
+     RemoteViews 不允许裸 <View>(android.view.View)，必须用白名单类（这里用 ImageView 作透明点击靶）。 -->
+<ImageView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/nfSeg"
+    android:layout_width="0dp"
+    android:layout_height="match_parent"
+    android:layout_weight="1"
+    android:background="@android:color/transparent"
+    android:scaleType="fitXY" />
