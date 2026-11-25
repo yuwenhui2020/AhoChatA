@@ -1,4 +1,6 @@
-# AhoChat
+# AhoChatA
+
+(https://github.com/yuwenhui2020/AhoChatA)
 
 **Ad-hoc Chat for Android** · 免服务器、免账号的局域网优先即时通信
 *Serverless, account-free, LAN-first messenger for Android*
@@ -18,7 +20,7 @@
 
 ### 这是什么
 
-**AhoChat**（*ad-hoc chat, Android*）是一款安卓端的**自组网聊天工具**：同一个 Wi-Fi 下的两台手机、或手机与电脑，打开就能互相发现、直接聊天、通话、传文件——**没有服务器、没有注册登录，消息不经过任何云端**。
+**AhoChatA**（*ad-hoc chat, Android*）是一款安卓端的**自组网聊天工具**：同一个 Wi-Fi 下的两台手机、或手机与电脑，打开就能互相发现、直接聊天、通话、传文件——**没有服务器、没有注册登录，消息不经过任何云端**。
 
 没有路由器、没有网络时，它还能通过 **qaul（libp2p）**、**蓝牙自组网**、**WLAN Direct（Wi-Fi 直连）** 把设备连起来；跨网段/跨公网时，一台设备即可充当**中继**。
 
@@ -105,7 +107,7 @@ MIT License，详见 [LICENSE](LICENSE)。
 
 ### What is this
 
-**AhoChat** (*ad-hoc chat, Android*) is a **self-organising messenger for Android**. Two phones — or a phone and a PC — on the same Wi-Fi find each other and start chatting, calling and swapping files right away. **No server, no sign-up, and no cloud in the middle.**
+**AhoChatA** (*ad-hoc chat, Android*) is a **self-organising messenger for Android**. Two phones — or a phone and a PC — on the same Wi-Fi find each other and start chatting, calling and swapping files right away. **No server, no sign-up, and no cloud in the middle.**
 
 Without a router or any network it still links devices through **qaul (libp2p)**, **Bluetooth mesh** and **WLAN Direct**; across subnets or over the internet, any device can act as a **relay**.
 
