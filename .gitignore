@@ -3,6 +3,7 @@ bin/
 obj/
 dist/
 build.log
+build_restore.log
 
 # 本地临时目录：截图脚本、词典生成器、调试输出，不参与版本管理
 tmp/
