@@ -144,26 +144,69 @@ namespace AhoChatA
             Ensure(DefaultChannelName, DefaultChannelName, joined: true);
         }
 
+        /// <summary>频道注册表落盘格式：只保存频道本身（名字/标题/加入状态/链路），绝不保存消息。</summary>
+        private class ChannelDto
+        {
+            public string name;
+            public string title;
+            public bool joined;
+            public string[] links;
+        }
+
         private void Load()
         {
-            // 需求：加入的所有频道退出程序即不保存。
-            // 启动时清掉历史落盘数据，本次运行只在内存里维护频道；
-            // 下次启动只有内置 mesh 默认频道会被重建。
+            // 需求（2026-11-26 更新）：退出后台后消息列表只保留频道——mesh + 用户手动加入的频道。
+            // 因此频道注册表必须跨进程持久化；但消息仍然只在内存、退出即清空（ChatStore persist=false）。
+            // 这里恢复上次保存的频道；损坏/旧格式直接忽略，由构造函数重建 mesh 默认频道。
             try
             {
                 var prefs = ctx.GetSharedPreferences("Mchat", FileCreationMode.Private);
-                if (!string.IsNullOrEmpty(prefs.GetString(PrefKey, null)))
-                    prefs.Edit().Remove(PrefKey).Apply();
+                var raw = prefs.GetString(PrefKey, null);
+                if (string.IsNullOrEmpty(raw)) return;
+                var list = JsonConvert.DeserializeObject<List<ChannelDto>>(raw);
+                if (list == null) return;
+                foreach (var d in list)
+                {
+                    if (d == null || string.IsNullOrEmpty(d.name)) continue;
+                    var n = Convs.NormalizeChannel(d.name);
+                    var c = new Channel
+                    {
+                        Name = n,
+                        Title = Strip(d.title),
+                        Joined = d.joined
+                    };
+                    c.Links = d.links == null
+                        ? new HashSet<string>()
+                        : new HashSet<string>(d.links.Where(ChanLink.IsKnown));
+                    c.EnsureDefaultLinks();
+                    map[n] = c;
+                }
             }
             catch (Exception ex)
             {
-                Android.Util.Log.Warn("Channels", "清理历史频道失败: " + ex.Message);
+                Android.Util.Log.Warn("Channels", "加载频道失败: " + ex.Message);
             }
         }
 
         private void SaveLocked()
         {
-            // 需求：频道不跨进程保存。保留方法以维持原有调用点，但不再写 SharedPreferences。
+            // 只落盘频道元数据，消息由 ChatStore 管理且永不落盘。
+            try
+            {
+                var list = map.Values.Select(c => new ChannelDto
+                {
+                    name = c.Name,
+                    title = c.Title,
+                    joined = c.Joined,
+                    links = c.Links == null ? new string[0] : c.Links.ToArray()
+                }).ToList();
+                ctx.GetSharedPreferences("Mchat", FileCreationMode.Private)
+                   .Edit().PutString(PrefKey, JsonConvert.SerializeObject(list)).Apply();
+            }
+            catch (Exception ex)
+            {
+                Android.Util.Log.Warn("Channels", "保存频道失败: " + ex.Message);
+            }
         }
 
         /// <summary>该 conv 是否为已加入频道（中继模式下只允许已加入频道聊天）。</summary>
@@ -174,15 +217,21 @@ namespace AhoChatA
             lock (gate) return map.TryGetValue(n, out var c) && c.Joined;
         }
 
-        /// <summary>退出前清空内存中的非默认频道（默认 mesh 每次启动都会重建）。</summary>
+        /// <summary>
+        /// 退出后台：频道元数据已经由 SaveLocked 持久化，这里不再删除任何频道。
+        /// 只确保默认频道处于已加入状态（防止老数据里它被退出流程改坏），
+        /// 消息由 ChatStore 在本次进程内清空、下次启动也不回放。
+        /// </summary>
         public void ClearForExit()
         {
             lock (gate)
             {
                 var def = Convs.NormalizeChannel(DefaultChannelName);
-                foreach (var key in map.Keys.Where(k => !string.Equals(k, def, StringComparison.OrdinalIgnoreCase)).ToList())
-                    map.Remove(key);
-                if (map.TryGetValue(def, out var d)) d.Joined = true;
+                if (map.TryGetValue(def, out var d))
+                {
+                    if (!d.Joined) { d.Joined = true; SaveLocked(); }
+                }
+                else Ensure(DefaultChannelName, DefaultChannelName, joined: true);
             }
         }
 

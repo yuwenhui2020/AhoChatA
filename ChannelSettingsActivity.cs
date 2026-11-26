@@ -276,6 +276,21 @@ namespace AhoChatA
                     var pref = _bridge.PreferredTcpPort;
                     portRow.Text = L10n.T("监听端口：") + port
                                  + (pref > 0 ? L10n.T("（已指定 ") + pref + L10n.T("，重启后生效）") : L10n.T("（自动）"));
+                    // qaul 中继按官方同一套机制承担，但端口各自独立：
+                    //   qaul 消息 9199 / libp2p 中继 9200 / 本程序 TCP 中转 45778（官方 libp2p 用 9229）。
+                    try
+                    {
+                        var st = Newtonsoft.Json.Linq.JObject.FromObject(_bridge.ChannelStatus());
+                        if (st != null)
+                        {
+                            int qp = (int?)st["qaulPort"] ?? 0;
+                            int np = (int?)st["nodePort"] ?? 0;
+                            portRow.Text += L10n.T("\nqaul 消息端口：") + qp
+                                          + L10n.T("  · libp2p 中继端口：") + np
+                                          + L10n.T("  · 官方默认为 9229（本机不同）");
+                        }
+                    }
+                    catch { }
                 }
                 catch { }
             };

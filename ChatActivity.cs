@@ -1777,7 +1777,16 @@ namespace AhoChatA
 
                 var convs = bridge.GetConversations();
                 var cur = convs.FirstOrDefault(c => c.Id == currentConv);
-                string title = cur == null ? Convs.TitleOf(currentConv) : cur.Title;
+                string title;
+                if (cur != null) title = cur.Title;
+                else if (Convs.IsDm(currentConv))
+                {
+                    // 零消息私聊被 GetConversations 过滤，cur 为 null；
+                    // Convs.TitleOf 取排序后的固定一段，本机 id 排在后面时会把标题显示成自己。
+                    var other = Convs.DmPeer(currentConv, bridge.SelfPeerId);
+                    title = string.IsNullOrEmpty(other) ? Convs.TitleOf(currentConv) : other;
+                }
+                else title = Convs.TitleOf(currentConv);
                 txtTitle.Text = title;
 
                 // 顶栏副标题：在线数 + 接入方式（各已连接渠道及设备数），不再显示加密状态。
@@ -2082,20 +2091,74 @@ namespace AhoChatA
             catch { return ""; }
         }
 
-        /// <summary>「发起新会话」：私聊某台设备 / 加入频道。
+        /// <summary>「发起新会话」：私聊某台设备 / 按设备 ID 私聊 / 加入频道。
         /// qaul 现在只作为通信渠道存在，不再单独暴露「qaul 群组 / 公开信息」入口。</summary>
         private void ShowNewChatSheet()
         {
-            var items = new List<string> { L10n.T("和在线设备私聊"), L10n.T("加入 / 新建频道") };
+            var items = new List<string>
+            {
+                L10n.T("和在线设备私聊"),
+                L10n.T("私聊指定 ID 用户"),
+                L10n.T("加入 / 新建频道")
+            };
             L10n.Dialog(this)
+                .SetTitle(L10n.T("发起新会话"))
                 .SetItems(items.ToArray(), (s, e) =>
                 {
                     switch (items[e.Which])
                     {
                         case "和在线设备私聊": ShowPeerPicker(); break;
+                        case "私聊指定 ID 用户": ShowDmByIdDialog(); break;
                         case "加入 / 新建频道": ShowJoinChannelDialog(); break;
                     }
                 })
+                .Show();
+        }
+
+        /// <summary>
+        /// 按「通信渠道的 AhoChat 设备 ID」直接发起私聊。对方不在线也能建会话：
+        /// 消息进本地会话与出站队列，等对方上线/经中继可达时投递（与在线设备私聊同一条路径）。
+        /// 此处只接受本系列 AhoChat 的设备 ID（dm: 会话），纯 qaul 官方客户端 ID 不接受——
+        /// 按需求，纯 qaul 设备只能由对方先私聊本机后才建立会话。
+        /// </summary>
+        private void ShowDmByIdDialog()
+        {
+            if (bridge == null) return;
+            var et = new EditText(this)
+            {
+                Hint = L10n.T("粘贴对方 AhoChat 设备 ID"),
+                InputType = Android.Text.InputTypes.ClassText
+            };
+            et.SetSingleLine(true);
+            et.SetPadding(Dp(12), Dp(10), Dp(12), Dp(10));
+            L10n.Dialog(this)
+                .SetTitle(L10n.T("私聊指定 ID 用户"))
+                .SetMessage(L10n.T("在对方「我的」页点设备 ID 即可复制，粘贴到此处。"))
+                .SetView(et)
+                .SetPositiveButton(L10n.T("开始私聊"), (s2, e2) =>
+                {
+                    var id = (et.Text ?? "").ToString().Trim();
+                    if (string.IsNullOrEmpty(id))
+                    {
+                        L10n.Toast(this, L10n.T("请先填写设备 ID"), ToastLength.Short).Show();
+                        return;
+                    }
+                    if (string.Equals(id, bridge.SelfPeerId, StringComparison.OrdinalIgnoreCase))
+                    {
+                        L10n.Toast(this, L10n.T("不能和自己私聊"), ToastLength.Short).Show();
+                        return;
+                    }
+                    var conv = bridge.StartDm(id, null);
+                    if (string.IsNullOrEmpty(conv))
+                    {
+                        L10n.Toast(this, L10n.T("设备 ID 无效"), ToastLength.Short).Show();
+                        return;
+                    }
+                    currentConv = conv;
+                    RefreshConversations();
+                    OpenChatConv(conv);
+                })
+                .SetNegativeButton(L10n.T("取消"), (s2, e2) => { })
                 .Show();
         }
 
@@ -4798,6 +4861,20 @@ namespace AhoChatA
             headCard.AddView(head);
 
             var conn = NewGroup(meBox, L10n.T("连接"));
+            // AhoChat 设备 ID（通信渠道里标识本机的 id）：点击整行复制完整值，
+            // 对方在「发起新会话 → 私聊指定 ID 用户」里粘贴即可直接建会话。
+            var selfId = bridge == null ? "" : (bridge.SelfPeerId ?? "");
+            conn.AddView(MeRow(L10n.T("我的设备 ID"), selfId, () =>
+            {
+                if (string.IsNullOrEmpty(selfId))
+                {
+                    L10n.Toast(this, L10n.T("设备 ID 尚未就绪"), ToastLength.Short).Show();
+                    return;
+                }
+                CopyText(selfId);
+                L10n.Toast(this, L10n.T("设备 ID 已复制，发给对方即可私聊"), ToastLength.Short).Show();
+            }));
+            conn.AddView(BuildDivider());
             conn.AddView(MeRow(L10n.T("通信渠道设置"), L10n.T("IP · 蓝牙 · qaul · WLAN Direct"),
                 () => StartActivity(new Intent(this, typeof(ChannelSettingsActivity)))));
             conn.AddView(BuildDivider());
@@ -5887,7 +5964,7 @@ namespace AhoChatA
                 row.Click += (s, e) =>
                 {
                     var conv = bridge.OpenQaulDm(peer);
-                    if (conv == null) { L10n.Toast(this, L10n.T("无法进入会话（qaul 未运行）"), ToastLength.Short).Show(); return; }
+                    if (conv == null) { L10n.Toast(this, L10n.T("无法进入会话（对方尚未私聊本机）"), ToastLength.Short).Show(); return; }
                     if (dlg != null) { try { dlg.Dismiss(); } catch { } }
                     SwitchConv(conv);
                     L10n.Toast(this, L10n.T("已进入与 ") + peer.Substring(0, 10) + L10n.T(" 的私聊，发消息即可"),

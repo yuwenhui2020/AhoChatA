@@ -5370,10 +5370,25 @@ namespace AhoChatA
 
         /* ---------- qaul 联系人 / 群组 / 静态节点 ---------- */
 
-        /// <summary>进入与某个 qaul 用户的私聊。</summary>
+        /// <summary>
+        /// 对方是否已经先私聊过本机。
+        /// 2026-11-26 需求：不允许主动私聊纯 qaul 官方客户端；只有对方先私聊本机，
+        /// 本机才有这条会话、才能回复。本系列客户端之间的私聊走 dm: 会话（StartDm），
+        /// 不受此限制。回复消息本身走 SendMessage/Session → SendQaulViaNode，也不经此方法。
+        /// </summary>
+        private bool QaulDmSessionExists(string peerB58)
+        {
+            if (string.IsNullOrEmpty(peerB58)) return false;
+            var conv = Convs.QaulDmPrefix + peerB58;
+            if (store == null) return false;
+            return store.Count(conv) > 0 || store.Conversations().Exists(c => c.Id == conv);
+        }
+
+        /// <summary>进入与某个 qaul 用户的私聊（仅对方先私聊过本机时允许）。</summary>
         public string OpenQaulDm(string peerB58)
         {
             if (string.IsNullOrEmpty(peerB58)) return null;
+            if (!QaulDmSessionExists(peerB58)) return null;
             var conv = Convs.QaulDmPrefix + peerB58;
             // 进入会话就装载对称派生密钥，使「已加密 / 安全码」状态立刻正确
             EnsureQaulDmKey(peerB58);
@@ -5435,6 +5450,9 @@ namespace AhoChatA
                 return new { ok = false, queued = false, error = L10n.T("qaul 节点未运行") };
             if (peerB58 == qnode.Messaging.MyIdB58)
                 return new { ok = false, queued = false, error = L10n.T("不能发给自己") };
+            // 需求：纯 qaul 官方客户端不能由本机主动私聊；只有对方先私聊过本机才有会话可回复。
+            if (!QaulDmSessionExists(peerB58))
+                return new { ok = false, queued = false, error = L10n.T("对方尚未私聊本机，不能主动发起 qaul 私聊") };
 
             var conv = OpenQaulDm(peerB58);
             // LC1：qaul 私钥只保证"来源可信"，内容机密性由本层负责
@@ -5702,11 +5720,31 @@ namespace AhoChatA
             // store.Conversations() 是按「有消息的会话」生成的，对端在别的频道里说一句，
             // 这个 chan:xxx 就会带着消息冒出来——看起来就像被别人拉进了频道。
             // 这里按注册表过滤：只保留用户自己加入过的频道（默认频道始终保留）。
+            //
+            // 2026-11-26 需求：退出后台后消息列表只保留频道（mesh + 手动加入）。消息会被清空，
+            // 于是这些频道在 store 里没有任何条目；必须按注册表把它们**补回**列表，
+            // 否则「空频道」会从界面上消失。频道注册表本身已持久化（Channels.cs）。
             try
             {
                 var joined = new HashSet<string>(StringComparer.Ordinal);
-                foreach (var c in channels.Joined()) if (c != null && !string.IsNullOrEmpty(c.Conv)) joined.Add(c.Conv);
+                var joinedChannels = channels.Joined();
+                foreach (var c in joinedChannels)
+                    if (c != null && !string.IsNullOrEmpty(c.Conv)) joined.Add(c.Conv);
                 list.RemoveAll(c => Convs.IsChan(c.Id) && c.Id != def && !joined.Contains(c.Id));
+                // 把已加入但「零消息」的频道补进来（退出清理后就是这种状态）。
+                foreach (var id in joined)
+                {
+                    if (list.Exists(c => c.Id == id)) continue;
+                    list.Add(new Conversation
+                    {
+                        Id = id,
+                        IsDm = false,
+                        Title = Convs.TitleOf(id),
+                        UpdatedAt = 0
+                    });
+                }
+                if (!list.Exists(c => c.Id == def))
+                    list.Add(new Conversation { Id = def, Title = Convs.TitleOf(def) });
                 // 标题一律现算：老版本把频道标题存成了「#mesh」，历史里还留着，显示时统一抹掉 #
                 foreach (var c in list)
                     if (Convs.IsChan(c.Id)) c.Title = Convs.TitleOf(c.Id);
@@ -7177,7 +7215,10 @@ namespace AhoChatA
             Peer p;
             var name = otherName;
             if (string.IsNullOrEmpty(name) && peers.TryGetValue(otherPeerId, out p)) name = p.Name;
-            if (!string.IsNullOrEmpty(name)) store.SetTitle(conv, name);
+            // 按 ID 私聊（对方不在线 / 不在 peers 里）时，Convs.TitleOf 只会取排序后的第二段，
+            // 本机 ID 排在后面就会把标题显示成自己。这里显式用对方 ID 当标题。
+            if (string.IsNullOrEmpty(name)) name = otherPeerId;
+            store.SetTitle(conv, name);
             SetActiveConv(conv);
             Emit("conv", new { conv, title = name ?? Convs.TitleOf(conv) });
             return conv;
@@ -10166,7 +10207,22 @@ namespace AhoChatA
             discoverySocket = null;
             multicastLock = null;
             peers.Clear();
-            // 需求：加入的所有频道退出程序即不保存；双向确认状态也一并清掉
+            // 2026-11-26 需求：退出后台 = 消息列表只留下频道。
+            //   · 所有会话（频道 + 私聊）的消息全部清空；
+            //   · 私聊会话整体删除（否则零消息标题还会留在列表里）；
+            //   · 频道本身保留（mesh + 手动加入），由 ChannelRegistry 持久化；
+            // 消息本来就不落盘，这里主动清一次是为了让「悬浮窗仍在、Bridge 未必重建」的场景也干净。
+            try
+            {
+                if (store != null)
+                {
+                    // Load() 在 persist=false 下会清空 items / deletedIds / knownIds / readAt / titles
+                    // 且不回放、不写盘——比逐会话墓碑更彻底，连私聊标题都不留。
+                    store.ClearAll();
+                    store.Load();
+                }
+            }
+            catch { }
             try { channels?.ClearForExit(); } catch { }
             try { LanPeerGate.Clear(); } catch { }
 
