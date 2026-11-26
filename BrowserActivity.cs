@@ -125,7 +125,8 @@ namespace AhoChatA
 
 
         // 增强功能
-        private bool _adBlockEnabled = true;
+        // 广告拦截默认关闭：需要用户在菜单里主动开启（尊重网页原始内容，避免误拦）
+        private bool _adBlockEnabled = false;
         private bool _resourceSniffingEnabled = true;
         private bool _userScriptEnabled = true;
         private bool _blockNetworkImages;
@@ -4373,7 +4374,8 @@ document.addEventListener('contextmenu',function(e){
         private const string KeyLastUpdate = "last_update";
         private const string KeyEnabled = "enabled";
         private const string KeyStats = "stats_json";
-        private bool _enabled = true;
+        // 默认关闭：新安装/无历史偏好时不拦截；用户手动开启后写入偏好会被保留
+        private bool _enabled = false;
         private long _blockedCount = 0;
         private long _cosmeticCount = 0;
 
@@ -4519,7 +4521,7 @@ document.addEventListener('contextmenu',function(e){
             try
             {
                 var prefs = _ctx.GetSharedPreferences(PrefName, FileCreationMode.Private);
-                _enabled = prefs.GetBoolean(KeyEnabled, true);
+                _enabled = prefs.GetBoolean(KeyEnabled, false);
                 var subsJson = prefs.GetString(KeySubscriptions, "[]");
                 var customJson = prefs.GetString(KeyCustomRules, "[]");
                 var lastUpdate = prefs.GetLong(KeyLastUpdate, 0);

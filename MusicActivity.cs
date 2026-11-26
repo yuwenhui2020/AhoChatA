@@ -295,11 +295,11 @@ namespace AhoChatA
             // 分区导航（iOS 分段控件 segmented control 风格）：音乐 / 视频 / 图片 / 设置
             // 原「影音」大标题栏已移除；歌单/喜欢并入「音乐」栏目；目录/刷新/网络收进「设置」浮窗。
             _navSeg = new LinearLayout(this) { Orientation = Orientation.Horizontal };
-            _navSeg.SetPadding(Dp(3), Dp(3), Dp(3), Dp(3));
+            _navSeg.SetPadding(Dp(3), Dp(2), Dp(3), Dp(2));
             _navSeg.Background = RoundBg(unchecked((int)0xFFE3E3E8), 10);
 
             _navRow = new LinearLayout(this) { Orientation = Orientation.Horizontal };
-            _navRow.SetPadding(Dp(12), Dp(12), Dp(12), Dp(4));
+            _navRow.SetPadding(Dp(12), Dp(6), Dp(12), Dp(3));
             AddNav(L10n.T("音乐"), SecAudio); AddNav(L10n.T("视频"), SecVideo); AddNav(L10n.T("图片"), SecPhoto);
             AddActionNav(L10n.T("设置"), ShowSettingsMenu);
             _navSeg.AddView(_navRow, new LinearLayout.LayoutParams(-1, -2));
@@ -307,7 +307,7 @@ namespace AhoChatA
 
             // 音乐栏目内的子切换：歌曲 / 歌单 / 喜欢（节省顶栏空间）
             _musicSubBar = new LinearLayout(this) { Orientation = Orientation.Horizontal };
-            _musicSubBar.SetPadding(Dp(12), Dp(2), Dp(12), Dp(2));
+            _musicSubBar.SetPadding(Dp(12), Dp(1), Dp(12), Dp(1));
             _subSongs = ChipBtn(L10n.T("歌曲"), () => SetSection(SecAudio));
             _subPlaylists = ChipBtn(L10n.T("歌单"), () => SetSection(SecPlaylist));
             _subFavorites = ChipBtn(L10n.T("喜欢"), () => SetSection(SecFav));
@@ -318,7 +318,7 @@ namespace AhoChatA
 
             // 搜索框：iOS 搜索栏风格（浅灰底、圆角 10、无边框）
             var searchRow = new LinearLayout(this) { Orientation = Orientation.Horizontal };
-            searchRow.SetPadding(Dp(12), Dp(6), Dp(12), Dp(4));
+            searchRow.SetPadding(Dp(12), Dp(3), Dp(12), Dp(2));
             searchRow.SetGravity(GravityFlags.CenterVertical);
 
             // 搜索条整体做成 iOS searchBar：灰底圆角容器 + 放大镜 + 输入框 + 框内清除
@@ -334,9 +334,9 @@ namespace AhoChatA
             _search = new EditText(this) { Hint = L10n.T("搜索本机 / 在线音乐") };
             _search.TextSize = 16;
             _search.SetSingleLine(true);
-            _search.SetMinHeight(Dp(44));
+            _search.SetMinHeight(Dp(38));
             _search.Background = null;               // 圆角由外层容器提供
-            _search.SetPadding(0, Dp(11), Dp(4), Dp(11));
+            _search.SetPadding(0, Dp(8), Dp(4), Dp(8));
             _search.LayoutParameters = new LinearLayout.LayoutParams(0, -2, 1f);
             _search.Visibility = ViewStates.Visible;
             _search.TextChanged += (s, e) =>
@@ -349,7 +349,7 @@ namespace AhoChatA
             searchWrap.AddView(_search);
 
             var clearBtn = new IconView(this, IconKind.Close) { IconColor = TextSub, Thickness = 1.7f };
-            clearBtn.LayoutParameters = new LinearLayout.LayoutParams(Dp(34), Dp(34));
+            clearBtn.LayoutParameters = new LinearLayout.LayoutParams(Dp(30), Dp(30));
             clearBtn.Click += (s, e) => { _search.Text = ""; };
             searchWrap.AddView(clearBtn);
 
@@ -381,7 +381,7 @@ namespace AhoChatA
             // 状态行
             _subText = new TextView(this) { TextSize = 12 };
             _subText.SetTextColor(new Color(TextSub));
-            _subText.SetPadding(Dp(16), Dp(6), Dp(16), Dp(8));
+            _subText.SetPadding(Dp(16), Dp(3), Dp(16), Dp(4));
             page.AddView(_subText);
 
             // 内容容器：音乐/喜欢走列表，视频走海报卡片网格
@@ -572,7 +572,7 @@ namespace AhoChatA
         {
             var t = new TextView(this) { Text = text, TextSize = 13, Gravity = GravityFlags.Center };
             t.SetTypeface(null, TypefaceStyle.Bold);
-            t.SetPadding(Dp(4), Dp(8), Dp(4), Dp(8));
+            t.SetPadding(Dp(4), Dp(5), Dp(4), Dp(5));
             t.LayoutParameters = new LinearLayout.LayoutParams(0, -2, 1f) { LeftMargin = Dp(2), RightMargin = Dp(2) };
             t.Click += (s, e) => SetSection(section);
             _navBtns.Add(t);
@@ -584,7 +584,7 @@ namespace AhoChatA
         {
             var t = new TextView(this) { Text = text, TextSize = 13, Gravity = GravityFlags.Center };
             t.SetTypeface(null, TypefaceStyle.Bold);
-            t.SetPadding(Dp(4), Dp(8), Dp(4), Dp(8));
+            t.SetPadding(Dp(4), Dp(5), Dp(4), Dp(5));
             t.LayoutParameters = new LinearLayout.LayoutParams(0, -2, 1f) { LeftMargin = Dp(2), RightMargin = Dp(2) };
             t.Click += (s, e) => { try { onClick(); } catch { } };
             _navBtns.Add(t);
@@ -599,14 +599,7 @@ namespace AhoChatA
                 bool lt = ListenTogether.Enabled;
                 var items = new[]
                 {
-                    L10n.T("一起听：") + (lt ? L10n.T("已开启（点击关闭）") : L10n.T("已关闭（点击开启）")),
-                    L10n.T("目录设置（检索范围）"), L10n.T("刷新媒体库"), L10n.T("打开网络音乐页")
-                };
-                var dlg = L10n.Dialog(this);
-                dlg.SetTitle(L10n.T("设置"));
-                dlg.SetItems(items, (s, e) =>
-                {
-                    if (e.Which == 0)
+                    (IconKind.Music, L10n.T("一起听：") + (lt ? L10n.T("已开启（点击关闭）") : L10n.T("已关闭（点击开启）")), false, new Action(() =>
                     {
                         // 关闭后音乐卡片照常发送/更新，只是不再附带播放列表
                         ListenTogether.Enabled = !lt;
@@ -618,13 +611,12 @@ namespace AhoChatA
                         }
                         catch { }
                         ShowSettingsMenu();   // 重开一次让用户立刻看到新状态
-                    }
-                    else if (e.Which == 1) OpenDirsDialog();
-                    else if (e.Which == 2) EnsureStorageThenScan(true);
-                    else OpenWebMedia();
-                });
-                dlg.SetNegativeButton(L10n.T("取消"), (s, e) => { });
-                dlg.Show();
+                    })),
+                    (IconKind.Folder, L10n.T("目录设置（检索范围）"), false, new Action(OpenDirsDialog)),
+                    (IconKind.Refresh, L10n.T("刷新媒体库"), false, new Action(() => EnsureStorageThenScan(true))),
+                    (IconKind.Globe, L10n.T("打开网络音乐页"), false, new Action(OpenWebMedia))
+                };
+                ShowActionSheet(L10n.T("设置"), items);
             }
             catch { }
         }
@@ -1351,42 +1343,32 @@ namespace AhoChatA
 
         private void ShowPlaylistMenu(View anchor, string id)
         {
-            var pm = new PopupMenu(this, anchor);
-            pm.Menu.Add(0, 1, 0, L10n.T("播放全部"));
-            pm.Menu.Add(0, 2, 1, L10n.T("查看歌曲"));
+            var items = new System.Collections.Generic.List<(IconKind, string, bool, Action)>
+            {
+                (IconKind.Play, L10n.T("播放全部"), false, () => PlayWholeList(id)),
+                (IconKind.Queue, L10n.T("查看歌曲"), false, () => OpenPlaylistDetail(id))
+            };
             if (id != PlaylistStore.FavoritesId)
             {
-                pm.Menu.Add(0, 3, 2, L10n.T("重命名"));
-                pm.Menu.Add(0, 4, 3, L10n.T("删除歌单"));
-            }
-            pm.MenuItemClick += (s, e) =>
-            {
-                switch (e.Item.ItemId)
-                {
-                    case 1: PlayWholeList(id); break;
-                    case 2: OpenPlaylistDetail(id); break;
-                    case 3:
-                        PromptText(L10n.T("重命名歌单"), PlaylistStore.NameOf(id), n =>
+                items.Add((IconKind.Pen, L10n.T("重命名"), false, () =>
+                    PromptText(L10n.T("重命名歌单"), PlaylistStore.NameOf(id), n =>
+                    {
+                        PlaylistStore.Rename(id, n);
+                        RefreshPlaylists();
+                    })));
+                items.Add((IconKind.Trash, L10n.T("删除歌单"), true, () =>
+                    L10n.Dialog(this)
+                        .SetTitle(L10n.T("删除歌单"))
+                        .SetMessage(L10n.T("确定删除「") + PlaylistStore.NameOf(id) + L10n.T("」？文件不会被删除。"))
+                        .SetPositiveButton(L10n.T("删除"), (a, b) =>
                         {
-                            PlaylistStore.Rename(id, n);
+                            PlaylistStore.Delete(id);
                             RefreshPlaylists();
-                        });
-                        break;
-                    case 4:
-                        L10n.Dialog(this)
-                            .SetTitle(L10n.T("删除歌单"))
-                            .SetMessage(L10n.T("确定删除「") + PlaylistStore.NameOf(id) + L10n.T("」？文件不会被删除。"))
-                            .SetPositiveButton(L10n.T("删除"), (a, b) =>
-                            {
-                                PlaylistStore.Delete(id);
-                                RefreshPlaylists();
-                            })
-                            .SetNegativeButton(L10n.T("取消"), (a, b) => { })
-                            .Create().Show();
-                        break;
-                }
-            };
-            pm.Show();
+                        })
+                        .SetNegativeButton(L10n.T("取消"), (a, b) => { })
+                        .Create().Show()));
+            }
+            ShowActionSheet(PlaylistStore.NameOf(id), items.ToArray());
         }
 
         private void PlayWholeList(string id)
@@ -1484,66 +1466,58 @@ namespace AhoChatA
         /// <summary>歌曲右侧竖向三点展开的菜单。</summary>
         private void ShowSongMenu(View anchor, Song s, Action refresh = null, string fromListId = null)
         {
-            var pm = new PopupMenu(this, anchor);
+            var items = new System.Collections.Generic.List<(IconKind, string, bool, Action)>();
             if (s.IsOnline)
             {
                 // 在线歌曲：播放 / 下一曲 / 加入播放列表 / 下载到本地（无本地文件，不能收藏、分享、移出）
-                pm.Menu.Add(0, 1, 0, L10n.T("播放"));
-                pm.Menu.Add(0, 2, 1, L10n.T("下一曲播放"));
-                pm.Menu.Add(0, 10, 2, L10n.T("加入播放列表（自动缓存）"));
-                pm.Menu.Add(0, 9, 3, L10n.T("下载到本地"));
+                items.Add((IconKind.Play, L10n.T("播放"), false, () => PlaySongFromList(s)));
+                items.Add((IconKind.Next, L10n.T("下一曲播放"), false, () =>
+                {
+                    MusicPlayer.PlayNext(s);
+                    L10n.Toast(this, L10n.T("已设为下一曲播放"), ToastLength.Short).Show();
+                }));
+                items.Add((IconKind.Queue, L10n.T("加入播放列表（自动缓存）"), false, () =>
+                {
+                    MusicPlayer.AddToQueue(s);
+                    L10n.Toast(this, L10n.T("已加入播放列表，后台缓存中…"), ToastLength.Short).Show();
+                    OnlineMusic.PrefetchQueue(new List<Song> { s });
+                }));
+                items.Add((IconKind.Download, L10n.T("下载到本地"), false, () => DownloadOnline(s)));
             }
             else
             {
-                pm.Menu.Add(0, 1, 0, L10n.T("播放"));
-                pm.Menu.Add(0, 2, 1, L10n.T("下一曲播放"));
-                pm.Menu.Add(0, 3, 2, PlaylistStore.IsFavorite(s.Path) ? L10n.T("取消喜欢") : L10n.T("设为喜欢"));
-                pm.Menu.Add(0, 4, 3, L10n.T("加入歌单"));
-                pm.Menu.Add(0, 5, 4, L10n.T("分享"));
-                pm.Menu.Add(0, 8, 5, L10n.T("分享到频道"));
-                if (fromListId != null) pm.Menu.Add(0, 6, 6, "从歌单移出");
-                pm.Menu.Add(0, 7, 7, L10n.T("从列表移除"));
-            }
-            pm.MenuItemClick += (sd, ev) =>
-            {
-                switch (ev.Item.ItemId)
+                items.Add((IconKind.Play, L10n.T("播放"), false, () => PlaySongFromList(s)));
+                items.Add((IconKind.Next, L10n.T("下一曲播放"), false, () =>
                 {
-                    case 1: PlaySongFromList(s); break;
-                    case 2:
-                        MusicPlayer.PlayNext(s);
-                        L10n.Toast(this, L10n.T("已设为下一曲播放"), ToastLength.Short).Show();
-                        break;
-                    case 3:
+                    MusicPlayer.PlayNext(s);
+                    L10n.Toast(this, L10n.T("已设为下一曲播放"), ToastLength.Short).Show();
+                }));
+                bool fav = PlaylistStore.IsFavorite(s.Path);
+                items.Add((fav ? IconKind.HeartFilled : IconKind.Heart,
+                    fav ? L10n.T("取消喜欢") : L10n.T("设为喜欢"), false, () =>
                     {
                         bool on = PlaylistStore.ToggleFavorite(s.Path);
                         L10n.Toast(this, on ? L10n.T("已加到我喜欢的音乐") : L10n.T("已取消喜欢"), ToastLength.Short).Show();
                         SyncFav();
                         RefreshPlaylists();
-                        break;
-                    }
-                    case 4: OpenAddToList(s, refresh); break;
-                    case 5: ShareSong(s); break;
-                    case 8: ShareSongToChannel(s); break;
-                    case 9: DownloadOnline(s); break;
-                    case 10:
-                        MusicPlayer.AddToQueue(s);
-                        L10n.Toast(this, L10n.T("已加入播放列表，后台缓存中…"), ToastLength.Short).Show();
-                        OnlineMusic.PrefetchQueue(new List<Song> { s });
-                        break;
-                    case 6:
-                        PlaylistStore.RemoveFrom(fromListId, s.Path);
-                        L10n.Toast(this, L10n.T("已从歌单移出"), ToastLength.Short).Show();
-                        RefreshPlaylists();
-                        break;
-                    case 7:
-                        MusicLibrary.Exclude(s.Path);
-                        L10n.Toast(this, L10n.T("已从列表移出（文件未删除，可在「目录」里恢复）"), ToastLength.Long).Show();
-                        ReloadList();
-                        break;
-                }
-                refresh?.Invoke();
-            };
-            pm.Show();
+                    }));
+                items.Add((IconKind.Plus, L10n.T("加入歌单"), false, () => OpenAddToList(s, refresh)));
+                items.Add((IconKind.Share, L10n.T("分享"), false, () => ShareSong(s)));
+                items.Add((IconKind.Group, L10n.T("分享到频道"), false, () => ShareSongToChannel(s)));
+                if (fromListId != null) items.Add((IconKind.Close, L10n.T("从歌单移出"), false, () =>
+                {
+                    PlaylistStore.RemoveFrom(fromListId, s.Path);
+                    L10n.Toast(this, L10n.T("已从歌单移出"), ToastLength.Short).Show();
+                    RefreshPlaylists();
+                }));
+                items.Add((IconKind.Trash, L10n.T("从列表移除"), true, () =>
+                {
+                    MusicLibrary.Exclude(s.Path);
+                    L10n.Toast(this, L10n.T("已从列表移出（文件未删除，可在「目录」里恢复）"), ToastLength.Long).Show();
+                    ReloadList();
+                }));
+            }
+            ShowActionSheet(s.DisplayTitle, items.ToArray(), refresh);
         }
 
         private void PlaySongFromList(Song s)
@@ -2819,6 +2793,85 @@ namespace AhoChatA
             t.SetPadding(Dp(14), Dp(7), Dp(14), Dp(7));
             t.Click += (s, e) => click();
             return t;
+        }
+
+        /// <summary>
+        /// iOS 风格动作菜单（Action Sheet）：底部弹出、圆角卡片、图标+文字行、
+        /// 破坏性操作标红、独立「取消」按钮。替代系统原生 PopupMenu。
+        /// </summary>
+        private void ShowActionSheet(string title,
+            (IconKind Icon, string Label, bool Destructive, Action Run)[] items, Action after = null)
+        {
+            try
+            {
+                Dialog dlg = null;
+                var sheet = new LinearLayout(this) { Orientation = Orientation.Vertical };
+                sheet.SetPadding(Dp(10), Dp(8), Dp(10), Dp(8));
+
+                var card = new LinearLayout(this) { Orientation = Orientation.Vertical };
+                card.Background = RoundBg(White, 14);
+                card.ClipToOutline = true;
+
+                if (!string.IsNullOrEmpty(title))
+                {
+                    var head = new TextView(this) { Text = title, TextSize = 12, Gravity = GravityFlags.Center };
+                    head.SetTextColor(new Color(TextSub));
+                    head.SetPadding(Dp(12), Dp(10), Dp(12), Dp(8));
+                    card.AddView(head, new LinearLayout.LayoutParams(-1, -2));
+                }
+
+                for (int i = 0; i < items.Length; i++)
+                {
+                    var it = items[i];
+                    var row = new LinearLayout(this) { Orientation = Orientation.Horizontal };
+                    row.SetGravity(GravityFlags.CenterVertical);
+                    row.SetPadding(Dp(14), Dp(12), Dp(14), Dp(12));
+                    row.Click += (s, e) =>
+                    {
+                        try { dlg?.Dismiss(); } catch { }
+                        try { it.Run(); } catch { }
+                        try { after?.Invoke(); } catch { }
+                    };
+                    var ic = new IconView(this, it.Icon)
+                    {
+                        IconColor = unchecked((int)(it.Destructive ? 0xFFFF3B30 : 0xFF007AFF))
+                    };
+                    row.AddView(ic, new LinearLayout.LayoutParams(Dp(22), Dp(22)) { RightMargin = Dp(14) });
+                    var lab = new TextView(this) { Text = it.Label, TextSize = 15 };
+                    lab.SetTextColor(new Color(it.Destructive ? IosRed : Accent));
+                    lab.SetSingleLine(true);
+                    lab.Ellipsize = Android.Text.TextUtils.TruncateAt.End;
+                    lab.LayoutParameters = new LinearLayout.LayoutParams(0, -2, 1f);
+                    row.AddView(lab);
+                    card.AddView(row);
+                    if (i < items.Length - 1) card.AddView(HLine(Dp(50)));
+                }
+                sheet.AddView(card, new LinearLayout.LayoutParams(-1, -2));
+
+                var cancel = new TextView(this)
+                { Text = L10n.T("取消"), TextSize = 15, Gravity = GravityFlags.Center };
+                cancel.SetTextColor(new Color(Accent));
+                cancel.SetTypeface(null, TypefaceStyle.Bold);
+                cancel.Background = RoundBg(White, 14);
+                cancel.SetPadding(Dp(12), Dp(13), Dp(12), Dp(13));
+                cancel.Click += (s, e) => { try { dlg?.Dismiss(); } catch { } };
+                sheet.AddView(cancel, new LinearLayout.LayoutParams(-1, -2) { TopMargin = Dp(8) });
+
+                dlg = new Dialog(this);
+                dlg.RequestWindowFeature((int)WindowFeatures.NoTitle);
+                dlg.SetCanceledOnTouchOutside(true);
+                dlg.SetContentView(sheet);
+                dlg.Show();
+                var w = dlg.Window;
+                if (w != null)
+                {
+                    w.SetBackgroundDrawable(new ColorDrawable(Color.Transparent));
+                    w.SetGravity(GravityFlags.Bottom | GravityFlags.CenterHorizontal);
+                    w.SetDimAmount(0.32f);
+                    w.SetLayout(System.Math.Min(Dp(420), Resources.DisplayMetrics.WidthPixels - Dp(16)), -2);
+                }
+            }
+            catch { }
         }
 
         /// <summary>iOS 风格的 1px 分隔线。</summary>

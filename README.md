@@ -125,6 +125,12 @@ docs/screenshots/        README 截图
 
 ### 更新日志
 
+**1.0.2**
+- 修复聊天渠道、语言切换 bug 与开屏卡顿。
+- 内置浏览器广告拦截改为默认关闭，保留手动开启与用户已有选择。
+- 音乐 / 视频界面 iOS 风格优化：顶部菜单栏瘦身；歌单、歌曲、设置菜单改为底部 ActionSheet（图标 + 蓝色文字、破坏性操作标红、独立取消按钮）。
+- README 介绍截图改用真机重制，中英双语各四张全部覆盖。
+
 **1.0.1**
 - 网页聊天界面与 App 统一：iOS 蓝气泡、圆形头像、5 分钟时间分隔。
 - 音乐 / 视频下载完成自动刷新，列表标注本地资源，新增分享到聊天频道 / 外部应用。
@@ -244,6 +250,12 @@ docs/screenshots/        screenshots used by this README
 ```
 
 ### Changelog
+
+**1.0.2**
+- Fixed chat channels, language switching and slow splash startup.
+- Built-in browser ad blocking is now off by default; manual enabling and existing preferences are preserved.
+- Music / video UI refined in iOS style: slimmer top bars; playlist, song and settings menus replaced with bottom action sheets (icons, blue text, red destructive actions, separate Cancel button).
+- README screenshots recaptured from a real device, all four screens in both Chinese and English.
 
 **1.0.1**
 - Web chat UI aligned with the native app: iOS blue bubbles, round avatars, 5-minute time separators.

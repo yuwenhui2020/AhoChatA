@@ -57,7 +57,7 @@ namespace AhoChatA
 
             // 子栏：本地视频 / 在线影视。默认本地；无本地视频时隐藏本行，直接展示在线。
             _videoSubBar = new LinearLayout(this) { Orientation = Orientation.Horizontal };
-            _videoSubBar.SetPadding(Dp(12), Dp(8), Dp(12), Dp(2));
+            _videoSubBar.SetPadding(Dp(12), Dp(3), Dp(12), Dp(2));
             _videoSubLocal = ChipBtn(L10n.T("本地视频"), () => SetVideoSubTab(0));
             _videoSubOnline = ChipBtn(L10n.T("在线影视"), () => SetVideoSubTab(1));
             _videoSubBar.AddView(_videoSubLocal);
@@ -68,7 +68,7 @@ namespace AhoChatA
             // 工具行：本地数量 + 分类 / 源管理 / 观看历史 / 刷新
             _vodBar = new LinearLayout(this) { Orientation = Orientation.Horizontal };
             _vodBar.SetGravity(GravityFlags.CenterVertical);
-            _vodBar.SetPadding(Dp(12), Dp(2), Dp(12), Dp(6));
+            _vodBar.SetPadding(Dp(12), Dp(2), Dp(12), Dp(3));
             var scroller = new HorizontalScrollView(this);
             scroller.LayoutParameters = new LinearLayout.LayoutParams(-1, -2);
             var chips = new LinearLayout(this) { Orientation = Orientation.Horizontal };
