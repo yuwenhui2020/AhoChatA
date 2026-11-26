@@ -98,8 +98,19 @@ namespace AhoChatA
         public static string T(string zh)
         {
             if (string.IsNullOrEmpty(zh) || IsChinese) return zh;
+            // Apply() 会遍历整棵视图树，其中大量文本已经是英文（或是纯数字/地址等
+            // 动态值）。词典的键全是中文，纯 ASCII 串不可能命中，直接跳过哈希查找
+            // 与比较——切到英文后遍历上千个 TextView 时这是最划算的一刀。
+            if (IsAscii(zh)) return zh;
             string en;
             return Map.TryGetValue(zh, out en) ? en : zh;
+        }
+
+        private static bool IsAscii(string s)
+        {
+            for (int i = 0; i < s.Length; i++)
+                if (s[i] > 127) return false;
+            return true;
         }
 
         /// <summary>成对给出中英文，适合新增代码直接内联。</summary>

@@ -66,6 +66,17 @@ namespace AhoChatA
         private long _headerCacheAt;
         private int _headerOnline;
         private string _headerAccess;
+
+        // 切换语言需要 Recreate 才能用新语言重新构建全部动态文案，但 Recreate 会走
+        // OnDestroy → CoreHost.Shutdown()，把 Bridge / WebServer / 前台服务全部拆掉再
+        // 在主线程重建（真机实测多花 30ms 构造 + 后台服务整轮重启，界面明显顿一下）。
+        // 这个标志让「重建界面」与「退出 App」彻底分开：只在后者才真正 Shutdown。
+        private static bool _recreateKeepCore;
+
+        // Recreate 后保留用户原来的位置，避免切个语言就被踢回消息页。
+        private const string StkTab = "aho.tab";
+        private const string StkInChat = "aho.inChat";
+        private const string StkConv = "aho.conv";
         // 画板设备（inkcanvas/painter）发现：UDP 21118，与「附近设备」并列展示
         private DrawboardDiscovery _drawDisc;
         private long _drawLastScan;
@@ -162,6 +173,9 @@ namespace AhoChatA
         protected override void OnCreate(Bundle savedInstanceState)
         {
             Perf.Mark("OnCreate 进入");
+            // 新实例起来，旧实例给出的「保留核心服务」授权到此为止；
+            // 正常冷启动时它本来就是 false。
+            _recreateKeepCore = false;
             RequestWindowFeature(WindowFeatures.NoTitle);
             base.OnCreate(savedInstanceState);
 
@@ -337,22 +351,48 @@ namespace AhoChatA
             // 打开 App 先看会话列表；如果是从通知带 conv 进来的，直接进聊天
             try { PrivacyActivity.ApplySecureFlag(this); } catch { }
             pendingOpenConv = Intent?.GetStringExtra("openConv");
-            ShowTab(0);
-            // 首帧之后再预热其余三个 Tab（仍走 UI 线程，但避开用户点击的那 16ms）。
+
+            // 切语言导致的 Recreate：把用户放回原来的 Tab / 会话，而不是踢回消息页。
+            // 同时跳过「首帧后预热其余三个 Tab」——那次预热是切换后紧接着的一阵卡顿来源，
+            // 而且 OnResume 已经把三页标脏，用户真点过去时会按需构建，并不缺内容。
+            bool restored = false;
             try
             {
-                bottomNav?.PostDelayed(new Java.Lang.Runnable(() =>
+                if (savedInstanceState != null)
                 {
-                    try
-                    {
-                        if (!_devicesBuilt) { BuildDevicesTab(); _devicesBuilt = true; }
-                        if (!_servicesBuilt) { BuildServicesTab(); _servicesBuilt = true; _servicesSig = SafeIp() + "|" + WebServer.ExternalPortActual; }
-                        if (!_meBuilt) { BuildMeTab(); _meBuilt = true; _meSig = (bridge?.SelfName ?? "") + "|" + SafeIp(); }
-                    }
-                    catch { }
-                }), 1500);
+                    currentTab = savedInstanceState.GetInt(StkTab, currentTab);
+                    inChat = savedInstanceState.GetBoolean(StkInChat, inChat);
+                    string savedConv = savedInstanceState.GetString(StkConv);
+                    if (!string.IsNullOrEmpty(savedConv)) currentConv = savedConv;
+                    restored = true;
+                }
             }
-            catch { }
+            catch { restored = false; }
+
+            if (restored)
+            {
+                if (inChat && !string.IsNullOrEmpty(currentConv)) OpenChatConv(currentConv);
+                else ShowTab(currentTab);
+            }
+            else
+            {
+                ShowTab(0);
+                // 首帧之后再预热其余三个 Tab（仍走 UI 线程，但避开用户点击的那 16ms）。
+                try
+                {
+                    bottomNav?.PostDelayed(new Java.Lang.Runnable(() =>
+                    {
+                        try
+                        {
+                            if (!_devicesBuilt) { BuildDevicesTab(); _devicesBuilt = true; }
+                            if (!_servicesBuilt) { BuildServicesTab(); _servicesBuilt = true; _servicesSig = SafeIp() + "|" + WebServer.ExternalPortActual; }
+                            if (!_meBuilt) { BuildMeTab(); _meBuilt = true; _meSig = (bridge?.SelfName ?? "") + "|" + SafeIp(); }
+                        }
+                        catch { }
+                    }), 1500);
+                }
+                catch { }
+            }
             if (!string.IsNullOrEmpty(pendingOpenConv)) OpenChatConv(pendingOpenConv);
             Perf.Mark("OnCreate 收尾");
         }
@@ -833,6 +873,19 @@ namespace AhoChatA
             base.OnPause();
         }
 
+        /// <summary>语言切换会 Recreate，这里记住用户正在看的页面，恢复时原样回去。</summary>
+        protected override void OnSaveInstanceState(Bundle outState)
+        {
+            try
+            {
+                outState.PutInt(StkTab, currentTab);
+                outState.PutBoolean(StkInChat, inChat);
+                outState.PutString(StkConv, currentConv);
+            }
+            catch { }
+            base.OnSaveInstanceState(outState);
+        }
+
         protected override void OnDestroy()
         {
             IsAlive = false;
@@ -871,13 +924,21 @@ namespace AhoChatA
             }
             catch { }
 
-            // 原生界面销毁且悬浮窗未运行时，彻底退出
-            if (!FloatingWindowService.IsRunning)
+            // 只有「真正退出」才拆核心服务。切语言的 Recreate 只是换一套视图，
+            // 若在这里 Shutdown，新界面就得在主线程重建 Bridge 并重启 WebServer、
+            // 前台服务、FTP、Bridge.Start——真机实测这一整轮重启就是切换后那阵卡顿，
+            // 还会打断正在进行的传输与播放。
+            bool keepCore = _recreateKeepCore || IsChangingConfigurations || FloatingWindowService.IsRunning;
+            try
             {
-                try { ChatForegroundService.Stop(this); } catch { }
-                try { LanShareService.Stop(this); } catch { }
-                try { CoreHost.Shutdown(); } catch { }
+                if (!keepCore)
+                {
+                    try { ChatForegroundService.Stop(this); } catch { }
+                    try { LanShareService.Stop(this); } catch { }
+                    try { CoreHost.Shutdown(); } catch { }
+                }
             }
+            finally { _recreateKeepCore = false; }
             base.OnDestroy();
         }
 
@@ -5020,9 +5081,18 @@ namespace AhoChatA
                 .SetTitle(L10n.T("语言", "Language"))
                 .SetSingleChoiceItems(items, sel, (s, e) =>
                 {
-                    L10n.SetOverride(e.Which == 1 ? "zh" : (e.Which == 2 ? "en" : null));
+                    string next = e.Which == 1 ? "zh" : (e.Which == 2 ? "en" : null);
+                    if (next == L10n.Override)
+                    {
+                        var same = s as Android.Content.IDialogInterface;
+                        if (same != null) same.Dismiss();
+                        return;   // 选了当前语言就不必重建
+                    }
+                    L10n.SetOverride(next);
                     var dlg = s as Android.Content.IDialogInterface;
                     if (dlg != null) dlg.Dismiss();
+                    // 这次销毁只是为了换语言重画界面，核心服务必须留着。
+                    _recreateKeepCore = true;
                     Recreate();
                 })
                 .SetNegativeButton(L10n.T("取消"), (s, e) => { })
