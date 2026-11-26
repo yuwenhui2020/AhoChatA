@@ -766,7 +766,7 @@ namespace AhoChatA
                     var cancel = new TextView(this) { Text = L10n.T("取消"), TextSize = 14, Gravity = GravityFlags.Center };
                     cancel.SetTextColor(Warn);
                     cancel.SetPadding(Dp(12), Dp(8), Dp(8), Dp(8));
-                    cancel.Click += (s, e) => { if (DownloadCenter.CancelHttp(t.Id)) Refresh(); };
+                    cancel.Click += (s, e) => { if (DownloadCenter.Cancel(t.Id)) Refresh(); };
                     top.AddView(cancel);
                 }
             }
@@ -912,7 +912,7 @@ namespace AhoChatA
         private void BatchCancelAll()
         {
             foreach (var id in _selectedIds.ToList())
-                DownloadCenter.CancelHttp(id);
+                DownloadCenter.Cancel(id);
             ExitBatchMode();
             Refresh();
             L10n.Toast(this, L10n.T("已取消选中任务"), ToastLength.Short).Show();
@@ -931,7 +931,7 @@ namespace AhoChatA
         {
             foreach (var id in _selectedIds.ToList())
             {
-                DownloadCenter.CancelHttp(id);
+                DownloadCenter.Cancel(id);
                 // 从列表移除（仅记录）
                 var task = DownloadCenter.Get(id);
                 if (task != null && task.Status == "done")
@@ -959,10 +959,10 @@ namespace AhoChatA
             if (t.Status == "failed" || t.Status == "canceled")
                 actions.Insert(0, (L10n.T("重试"), () => DownloadCenter.Retry(t.Id)));
             if (t.Status != "done")
-                actions.Insert(0, (L10n.T("取消下载"), () => DownloadCenter.CancelHttp(t.Id)));
+                actions.Insert(0, (L10n.T("取消下载"), () => DownloadCenter.Cancel(t.Id)));
             actions.Add((L10n.T("删除记录"), () =>
             {
-                DownloadCenter.CancelHttp(t.Id);
+                DownloadCenter.Cancel(t.Id);
                 if (t.Status == "done") DownloadCenter.ClearDone();
             }));
 

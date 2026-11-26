@@ -11,6 +11,7 @@
 // ============================================================
 using System;
 using System.IO;
+using System.Threading.Tasks;
 using Android.App;
 using Android.Content;
 using Android.Content.PM;
@@ -179,6 +180,14 @@ namespace AhoChatA
 
                 StartActivity(new Intent(this, typeof(ChatActivity)));
                 try { OverridePendingTransition(Android.Resource.Animation.FadeIn, Android.Resource.Animation.FadeOut); } catch { }
+                // 程序更新：一周一次的自动检测（延时在 UpdateManager 内部处理）
+                try { UpdateManager.ScheduleAutoCheck(); } catch { }
+                // 局域网文件共享默认带上一份本程序安装包（后台复制，不阻塞启动）
+                try
+                {
+                    Task.Run(() => ShareAppHelper.CopyInstaller(ApplicationContext, true));
+                }
+                catch { }
             }
             catch (Exception ex)
             {

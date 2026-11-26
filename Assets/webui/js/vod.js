@@ -683,8 +683,10 @@
     if (!url) { toast('该集无可用播放地址'); return; }
     fetch(A('vod/download?op=start&type=video&url=' + enc(url) + '&title=' + enc(title)))
       .then(r => r.json()).then(d => {
-        if (d && d.ok) toast('已加入下载队列，可在「下载」中心查看进度');
-        else toast('下载失败：' + ((d && d.error) || '未知错误'));
+        if (d && d.ok) {
+          toast('已加入下载队列，完成后会自动刷新影音列表');
+          if (M().waitDownload) M().waitDownload(d.id, () => { if (M().loadLibrary) return M().loadLibrary(); });
+        } else toast('下载失败：' + ((d && d.error) || '未知错误'));
       }).catch(() => toast('下载请求失败'));
   };
 

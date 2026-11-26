@@ -76,10 +76,23 @@ namespace AhoChatA
         {
             _ = System.Threading.Tasks.Task.Run(async () =>
             {
-                string result = await TranslateEngine.Instance.TranslateAsync(text, targetLang).ConfigureAwait(false);
+                string result;
+                try { result = await TranslateEngine.Instance.TranslateAsync(text, targetLang).ConfigureAwait(false); }
+                catch (Exception ex)
+                {
+                    Android.Util.Log.Warn("BrowserJsBridge", "translate 失败: " + ex.Message);
+                    result = text ?? "";
+                }
                 string js = "(function(){try{if(window.__mchatTranslateCb)window.__mchatTranslateCb("
                           + Json(callbackId) + "," + Json(result) + ");}catch(e){}})()";
-                try { _web.EvaluateJavascript(js, null); } catch { }
+                // 与 gmXhr 同理：翻译在后台线程完成，但 evaluateJavascript 必须在 UI 线程执行，
+                // 否则 CalledFromWrongThreadException 会被吞掉，页面上的回调永远不触发。
+                if (!TryGetOwner(out var owner)) return;
+                owner.RunOnUiThread(() =>
+                {
+                    try { _web.EvaluateJavascript(js, null); }
+                    catch (Exception ex) { Android.Util.Log.Warn("BrowserJsBridge", "translate eval: " + ex.Message); }
+                });
             });
         }
 

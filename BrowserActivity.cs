@@ -381,6 +381,7 @@ namespace AhoChatA
             if (isHome) tab.Web.LoadUrl("about:blank");
             else tab.Web.LoadUrl(url);
             if (select) SwitchTab(tab);
+            UpdateTabCount();
             return tab;
         }
 
@@ -416,6 +417,7 @@ namespace AhoChatA
             });
             _tabs.Add(tab);
             ConfigureWebView(tab);
+            UpdateTabCount();
             // 关键：不调用 LoadUrl，保持 WebView 处于 pristine 状态供 transport 使用
             return tab;
         }
@@ -459,6 +461,7 @@ namespace AhoChatA
             var index = _tabs.IndexOf(tab);
             if (index < 0) return;
             _tabs.RemoveAt(index);
+            UpdateTabCount();
             if (tab == _activeTab) _activeTab = null;
             DestroyTab(tab);
             if (tab.Incognito && !_tabs.Any(t => t.Incognito))
@@ -1160,10 +1163,10 @@ namespace AhoChatA
                 Text = label, TextSize = 10, Gravity = GravityFlags.Center,
                 ContentDescription = label, Clickable = true
             };
-            b.SetTextColor(Color.ParseColor("#18212B"));
+            b.SetTextColor(ChromeText(_browserNight));
             b.SetPadding(0, Dp(4), 0, Dp(3));
             b.SetCompoundDrawablesWithIntrinsicBounds(null,
-                new IconDrawable(this, icon, Color.ParseColor("#3C3C43"), Dp(22), 1.7f), null, null);
+                new IconDrawable(this, icon, ChromeSub(_browserNight), Dp(22), 1.7f), null, null);
             b.CompoundDrawablePadding = Dp(2);
             b.Click += (s, e) => click(b);
             row.AddView(b, new LinearLayout.LayoutParams(0, Dp(54), 1f));
@@ -1785,6 +1788,7 @@ window.__mchatDoTranslate=function(lang,onlySel){
         private static Color ChromeBg(bool night) => Color.ParseColor(night ? "#1C1C1E" : "#FFFFFF");
         private static Color ChromeText(bool night) => Color.ParseColor(night ? "#F2F2F7" : "#18212B");
         private static Color ChromeSub(bool night) => Color.ParseColor(night ? "#98989F" : "#8E8E93");
+        private static int ChromeIcon(bool night) => Color.ParseColor(night ? "#98989F" : "#3C3C43").ToArgb();
 
         /// <summary>夜间开关与 App 全局主题同步，避免浏览器和设置页显示不一致。</summary>
         private void ToggleBrowserNight()
@@ -1850,10 +1854,19 @@ window.__mchatDoTranslate=function(lang,onlySel){
             _urlText?.SetTextColor(ChromeText(night));
             _urlText?.SetHintTextColor(ChromeSub(night));
             if (_urlText != null) _urlText.Background = GetRoundedDrawable(Color.ParseColor(night ? "#2C2C2E" : "#F2F2F7"), 16);
-            if (_backButton != null) _backButton.SetTextColor(ChromeText(night));
-            if (_forwardButton != null) _forwardButton.SetTextColor(ChromeText(night));
-            if (_tabButton != null) _tabButton.SetTextColor(ChromeText(night));
+            // 底栏图标色跟随主题：此前 IconDrawable 固定 #3C3C43，夜间几乎看不清
+            TintBottomIcon(_backButton, night);
+            TintBottomIcon(_forwardButton, night);
+            TintBottomIcon(_tabButton, night);
             RefreshHomeTheme();
+        }
+
+        private static void TintBottomIcon(TextView button, bool night)
+        {
+            if (button == null) return;
+            button.SetTextColor(ChromeText(night));
+            var d = button.GetCompoundDrawables()[1] as IconDrawable;
+            if (d != null) d.IconColor = ChromeIcon(night);
         }
 
         private void RefreshHomeTheme()
@@ -2597,8 +2610,21 @@ window.__mchatDoTranslate=function(lang,onlySel){
             try { web.EvaluateJavascript(inject.ToString(), null); } catch { }
         }
 
+        /// <summary>
+        /// 只刷新底栏窗口数。独立于 RenderTab，避免被 "只有当前标签才渲染" 的守卫拦住——
+        /// 后台新建/关闭标签时数字也必须立刻更新。
+        /// </summary>
+        private void UpdateTabCount()
+        {
+            if (_tabButton == null) return;
+            var n = _tabs.Count;
+            _tabButton.Text = n.ToString();
+            _tabButton.ContentDescription = $"窗口，已打开 {n} 个";
+        }
+
         private void RenderTab(bool updateUrl)
         {
+            RunOnUiThread(UpdateTabCount);
             var tab = _activeTab;
             if (tab == null || tab.Closed) return;
             var isHome = tab.IsHome;
@@ -2619,6 +2645,8 @@ window.__mchatDoTranslate=function(lang,onlySel){
             _forwardButton.Enabled = !isHome && tab.Web.CanGoForward();
             _backButton.Alpha = _backButton.Enabled ? 1f : 0.4f;
             _forwardButton.Alpha = _forwardButton.Enabled ? 1f : 0.4f;
+            _backButton.Clickable = _backButton.Enabled;
+            _forwardButton.Clickable = _forwardButton.Enabled;
             Title = string.IsNullOrEmpty(tab.Title) ? L10n.T("浏览器") : tab.Title;
             UpdateSniffBar();
         }
@@ -3836,13 +3864,20 @@ else {{ document.body.innerHTML = '<div style=color:#fff;padding:20px;text-align
 
             public override bool OnCreateWindow(WebView view, bool isDialog, bool isUserGesture, Message resultMsg)
             {
-                if (!Guard() || _tab != _a._activeTab || !isUserGesture || !(resultMsg?.Obj is WebView.WebViewTransport transport))
+                // 不再要求 !isUserGesture：很多网页的跳转脚本（onclick 里动态 window.open、
+                // target=_blank 的脚本转发）在 Chromium 看来并非"用户手势"，旧守卫会把它们
+                // 直接拒绝，表现为"点了没反应"或落到后台。这里统一按新标签处理。
+                if (!Guard() || _tab != _a._activeTab || !(resultMsg?.Obj is WebView.WebViewTransport transport))
                     return false;
                 var child = _a.CreatePopupTab(_tab.Incognito);
                 if (child == null) return false;
                 child.Referer = _tab.Url;
                 transport.WebView = child.Web;
                 resultMsg.SendToTarget();
+                // 关键：popup 标签此前只入集合、从不激活，导致新页面在后台打开且底栏窗口数
+                // 因 RenderTab 的 active 守卫而不刷新。这里立即切到前台并挂载到容器。
+                _a.SwitchTab(child);
+                _a.UpdateTabCount();
                 return true;
             }
 
@@ -4244,7 +4279,8 @@ document.addEventListener('contextmenu',function(e){
                     if (e.Which >= 0 && e.Which < commands.Count && web != null)
                     {
                         var cmd = commands[e.Which];
-                        web.EvaluateJavascript("(function(){if(window.__mchat_gmMenuCallback&&window.__mchat_gmMenuCallbacks['" + cmd.Id + "'])window.__mchat_gmMenuCallback('" + cmd.Id + L10n.T("');else if(window.MchatJs&&window.MchatJs.gmToast)window.MchatJs.gmToast('命令已失效，请刷新页面');})()"), null);
+                        var idJs = JsonEncodeString(cmd.Id ?? "");
+                        web.EvaluateJavascript("(function(){var id=" + idJs + ";if(window.__mchat_gmMenuCallback&&window.__mchat_gmMenuCallbacks[id])window.__mchat_gmMenuCallback(id);else if(window.MchatJs&&window.MchatJs.gmToast)window.MchatJs.gmToast(" + JsonEncodeString(L10n.T("命令已失效，请刷新页面")) + ");})()", null);
                     }
                 })
                 .SetNegativeButton(L10n.T("取消"), (s, e) => { })
@@ -5336,9 +5372,13 @@ document.addEventListener('contextmenu',function(e){
 
         private string DetectResourceType(string url)
         {
-            var lower = url.ToLowerInvariant();
-            // 视频
-            if (lower.Contains(".m3u8") || lower.Contains("/hls/") || lower.Contains(".mpd")
+            // 扩展名只看路径部分，避免 ?from=.m3u8 这类查询串把普通资源误判为视频
+            var raw = url ?? "";
+            int cut = raw.IndexOfAny(new[] { '?', '#' });
+            if (cut >= 0) raw = raw.Substring(0, cut);
+            var lower = raw.ToLowerInvariant();
+            // 视频（/hls/ 是路径特征，仍然按完整 URL 判断）
+            if (lower.EndsWith(".m3u8") || (url ?? "").ToLowerInvariant().Contains("/hls/") || lower.Contains(".mpd")
                 || lower.EndsWith(".mp4") || lower.EndsWith(".mkv") || lower.EndsWith(".mov")
                 || lower.EndsWith(".webm") || lower.EndsWith(".flv") || lower.EndsWith(".ts"))
                 return "video";

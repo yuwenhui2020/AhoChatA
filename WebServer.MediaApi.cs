@@ -57,6 +57,8 @@ namespace AhoChatA
                 string p = path.Substring("/api/media/".Length).Trim('/').ToLowerInvariant();
 
                 if (p == "state") { WriteJson(res, Json(MediaState())); return; }
+                // 影音列表右侧菜单：分享到本地聊天频道 / 系统其它应用
+                if (p == "share" && post) { MediaShareApi(ctx, req); return; }
                 // 「共享听」状态镜像：网关(7790)有 ServeSyncListen，但 App 内置 WebView
                 // 是从这里(6789)直出 media.html 的，缺这一支会让 /media 页永远拿不到
                 // App 正在播放的曲目，点「同步听」也毫无反应。两端输出同一份 JSON。
@@ -80,10 +82,10 @@ namespace AhoChatA
                 if (p == "excluded") { WriteJson(res, Json(new { items = MusicLibrary.Excluded })); return; }
 
                 // 在线音乐（搜索 / 流 / 下载）：搜本机没有的歌、在线播放、下载到默认音乐目录
-                if (p == "online/search") { OnlineSearch(ctx, req); return; }
+                if (p == "online/search") { _ = OnlineSearch(ctx, req); return; }
                 if (p == "online/stream") { OnlineStream(ctx, req); return; }
-                if (p == "online/lyrics") { OnlineLyrics(ctx, req); return; }
-                if (p == "online/download" && post) { OnlineDownload(ctx, req); return; }
+                if (p == "online/lyrics") { _ = OnlineLyrics(ctx, req); return; }
+                if (p == "online/download" && post) { _ = OnlineDownload(ctx, req); return; }
 
                 // 在线影视（TVBox 订阅 + 苹果CMS 多源聚合），App 与网页端共用
                 if (p == "vod" || p.StartsWith("vod/")) { ServeVodApi(ctx, req, p, post); return; }
@@ -100,8 +102,35 @@ namespace AhoChatA
 
         /* ---------------- 状态 ---------------- */
 
-        private static object SongDto(Song s)
+        /// <summary>一次性汇总下载产物路径，避免给每首歌都遍历一遍下载历史（O(N*M)）。</summary>
+        private static void CollectDownloadFlags(out HashSet<string> downloaded, out HashSet<string> hls)
         {
+            downloaded = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            hls = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                foreach (var t in AhoChatA.Vod.DownloadCenter.List())
+                {
+                    if (t == null || t.Status != "done" || string.IsNullOrEmpty(t.OutputPath)) continue;
+                    string full;
+                    try { full = Path.GetFullPath(t.OutputPath); } catch { continue; }
+                    downloaded.Add(full);
+                    var ext = (Path.GetExtension(t.OutputPath) ?? "").ToLowerInvariant();
+                    if (t.Type == "hls" || ext == ".m3u8" || ext == ".ts") hls.Add(full);
+                }
+            }
+            catch (Exception ex) { Android.Util.Log.Warn("MediaApi", "汇总下载标记失败: " + ex.Message); }
+        }
+
+        private static string FullPathOf(string path)
+        {
+            try { return string.IsNullOrEmpty(path) ? "" : Path.GetFullPath(path); }
+            catch { return ""; }
+        }
+
+        private static object SongDto(Song s, HashSet<string> downloaded, HashSet<string> hls)
+        {
+            var full = FullPathOf(s.Path);
             return new
             {
                 path = s.Path,
@@ -116,7 +145,65 @@ namespace AhoChatA
                 hasCover = !string.IsNullOrEmpty(s.CoverPath),
                 hasLyrics = !string.IsNullOrEmpty(s.LrcPath),
                 favorite = PlaylistStore.IsFavorite(s.Path),
+                // 前端只给「本应用下载过」的文件显示「本地」角标与分享入口
+                downloaded = downloaded.Contains(full),
+                hls = hls.Contains(full),
             };
+        }
+
+        private sealed class MediaShareReq
+        {
+            public string path = "";
+            public string conv = "";
+            public bool external = false;
+        }
+
+        /// <summary>
+        /// 影音列表右侧菜单的分享接口。
+        /// 频道分享：前端先选会话，这里只接受可传文件的会话键（chan:/qaul:/qgroup:）。
+        /// 外部分享：只允许已落盘的单文件，m3u8 / ts 明确拒绝（可改为频道卡片分享）。
+        /// </summary>
+        private static void MediaShareApi(HttpListenerContext ctx, HttpListenerRequest req)
+        {
+            var res = ctx.Response;
+            try
+            {
+                var q = JsonConvert.DeserializeObject<MediaShareReq>(ReadVodBody(req)) ?? new MediaShareReq();
+                if (string.IsNullOrWhiteSpace(q.path))
+                { WriteJson(res, Json(new { ok = false, error = L10n.T("缺少文件路径") })); return; }
+
+                var song = MusicLibrary.Find(q.path);
+                if (song == null || !File.Exists(song.Path))
+                { WriteJson(res, Json(new { ok = false, error = L10n.T("曲库里没有这个文件") })); return; }
+
+                string fileName = Path.GetFileName(song.Path) ?? song.DisplayTitle;
+
+                if (q.external)
+                {
+                    if (AhoChatA.Vod.DownloadCenter.IsHlsOutput(song.Path))
+                    {
+                        WriteJson(res, Json(new { ok = false, error = L10n.T("m3u8 / HLS 不支持分享到外部应用，请分享到聊天频道") }));
+                        return;
+                    }
+                    InternalViewer.ShareFileFromService(Application.Context, song.Path, InternalViewer.MimeOf(song.Path));
+                    WriteJson(res, Json(new { ok = true }));
+                    return;
+                }
+
+                if (string.IsNullOrWhiteSpace(q.conv) ||
+                    !(Convs.IsChan(q.conv) || Convs.IsQaulDm(q.conv) || Convs.IsQaulGroup(q.conv)))
+                {
+                    WriteJson(res, Json(new { ok = false, error = L10n.T("请选择可传文件的频道或会话") }));
+                    return;
+                }
+                bool ok = MediaShare.ShareToChannel(Application.Context, q.conv, fileName, song.Path);
+                WriteJson(res, Json(new { ok, error = ok ? "" : L10n.T("分享失败，请确认附近有在线设备") }));
+            }
+            catch (Exception ex)
+            {
+                Android.Util.Log.Warn("MediaShareApi", "分享失败: " + ex.Message);
+                WriteJson(res, Json(new { ok = false, error = ex.Message }));
+            }
         }
 
         private static object PhotoDto(Photo p)
@@ -136,6 +223,10 @@ namespace AhoChatA
 
         private static object MediaState()
         {
+            // 重启后也要能识别哪些文件是下载来的（历史任务从磁盘恢复）
+            try { AhoChatA.Vod.DownloadCenter.LoadHistory(); } catch { }
+            HashSet<string> downloadedPaths, hlsPaths;
+            CollectDownloadFlags(out downloadedPaths, out hlsPaths);
             var audio = MusicLibrary.Audio();
             var videos = MusicLibrary.Videos();
             var photos = PhotoLibrary.All();
@@ -165,8 +256,8 @@ namespace AhoChatA
             return new
             {
                 ok = true,
-                audio = audio.Select(SongDto).ToList(),
-                videos = videos.Select(SongDto).ToList(),
+                audio = audio.Select(s => SongDto(s, downloadedPaths, hlsPaths)).ToList(),
+                videos = videos.Select(s => SongDto(s, downloadedPaths, hlsPaths)).ToList(),
                 photos = photos.Select(PhotoDto).ToList(),
                 photoFolders = PhotoLibrary.Folders().Select(f => new
                 {
@@ -548,7 +639,9 @@ namespace AhoChatA
                     result = new { ok = true };
                     break;
                 case "detail":
-                    var songs = PlaylistStore.SongsOf(id).Select(SongDto).ToList();
+                    HashSet<string> dlPaths, hlPaths;
+                    CollectDownloadFlags(out dlPaths, out hlPaths);
+                    var songs = PlaylistStore.SongsOf(id).Select(s => SongDto(s, dlPaths, hlPaths)).ToList();
                     result = new { ok = true, id, name = PlaylistStore.NameOf(id), songs };
                     break;
                 default:
@@ -636,7 +729,7 @@ namespace AhoChatA
         /// 在线搜索：默认走酷狗官方搜索，返回可直接播放的歌曲列表。
         /// 该接口只做搜索，不关心本机有没有这首歌；播放走 online/stream 流式转发。
         /// </summary>
-        private static async void OnlineSearch(HttpListenerContext ctx, HttpListenerRequest req)
+        private static async Task OnlineSearch(HttpListenerContext ctx, HttpListenerRequest req)
         {
             var res = ctx.Response;
             res.AddHeader("Access-Control-Allow-Origin", "*");
@@ -670,7 +763,7 @@ namespace AhoChatA
         /// 返回原始 LRC 文本，供网页端播放条 / 详情页渲染滚动歌词。
         /// 结果会落盘缓存（OnlineMusic.FetchLyricsAsync 内部处理），二次请求秒回。
         /// </summary>
-        private static async void OnlineLyrics(HttpListenerContext ctx, HttpListenerRequest req)
+        private static async Task OnlineLyrics(HttpListenerContext ctx, HttpListenerRequest req)
         {
             var res = ctx.Response;
             res.AddHeader("Access-Control-Allow-Origin", "*");
@@ -791,7 +884,7 @@ namespace AhoChatA
             }
             catch (Exception ex)
             {
-                try { res.StatusCode = 502; WriteJson(res, "{\"error\":\"" + ex.Message.Replace("\"", "'") + "\"}"); }
+                try { res.StatusCode = 502; WriteJson(res, Json(new { error = ex.Message })); }
                 catch { try { res.Abort(); } catch { } }
             }
             finally
@@ -804,7 +897,7 @@ namespace AhoChatA
         /// 下载在线歌曲到默认音乐目录（/storage/emulated/0/Music 或首个启用音乐检索的内置目录），
         /// 落盘后触发曲库重扫，使其立即出现在本地「音乐」列表。
         /// </summary>
-        private static async void OnlineDownload(HttpListenerContext ctx, HttpListenerRequest req)
+        private static async Task OnlineDownload(HttpListenerContext ctx, HttpListenerRequest req)
         {
             var res = ctx.Response;
             res.AddHeader("Access-Control-Allow-Origin", "*");

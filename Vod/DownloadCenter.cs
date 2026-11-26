@@ -11,6 +11,7 @@ using Android.Media;
 using Android.OS;
 using Android.Util;
 using AndroidX.Core.App;
+using AndroidX.Core.Content;
 using IoPath = System.IO.Path;
 using AhoChatA.Music;
 using AhoChatA.Reader;
@@ -37,8 +38,9 @@ namespace AhoChatA.Vod
         public string Url = "";           // 该集 m3u8 地址
         public int Total = 0;             // 切片总数
         public int Done = 0;              // 已下载切片数
-        // 音乐专用（重试时需要重建歌曲上下文）
+        // 音乐专用（重试时需要重建歌曲上下文与原始音质）
         public OnlineSong MusicSong = null;
+        public string Quality = "";
         // 小说专用（书架书籍 id，运行期从阅读库取章节）
         public long DownloadedBytes = 0;
         public long TotalBytes = -1;
@@ -76,7 +78,8 @@ namespace AhoChatA.Vod
                 Title = string.IsNullOrWhiteSpace(name) ? s.Title : name,
                 Status = "queued",
                 Added = DateTime.UtcNow,
-                MusicSong = s   // 必须保存，否则失败重试时 RunMusic 拿不到歌曲上下文
+                MusicSong = s,  // 必须保存，否则失败重试时 RunMusic 拿不到歌曲上下文
+                Quality = string.IsNullOrWhiteSpace(quality) ? "standard" : quality
             };
             t.DirHint = L10n.T("音乐/封面/歌词将保存到同一目录: ") + OnlineMusic.DownloadDir();
             lock (_lock) _tasks[t.Id] = t;
@@ -117,6 +120,43 @@ namespace AhoChatA.Vod
             lock (_lock) { _tasks.TryGetValue(id ?? "", out var t); return t; }
         }
 
+        /// <summary>该路径是否由本应用的下载任务产出（含历史任务）。用于给影音列表打「本地」标记。</summary>
+        public static bool IsDownloadedOutput(string path)
+        {
+            if (string.IsNullOrEmpty(path)) return false;
+            try
+            {
+                var full = IoPath.GetFullPath(path);
+                foreach (var t in List())
+                {
+                    if (t.Status != "done" || string.IsNullOrEmpty(t.OutputPath)) continue;
+                    if (string.Equals(IoPath.GetFullPath(t.OutputPath), full, StringComparison.OrdinalIgnoreCase))
+                        return true;
+                }
+            }
+            catch { }
+            return false;
+        }
+
+        /// <summary>是否 HLS/m3u8 产物：这类视频可以分享到聊天频道，但不支持外部分享单文件。</summary>
+        public static bool IsHlsOutput(string path)
+        {
+            var ext = (IoPath.GetExtension(path ?? "") ?? "").ToLowerInvariant();
+            if (ext == ".m3u8" || ext == ".ts") return true;
+            try
+            {
+                var full = IoPath.GetFullPath(path ?? "");
+                foreach (var t in List())
+                {
+                    if (t.Type != "hls" || string.IsNullOrEmpty(t.OutputPath)) continue;
+                    if (string.Equals(IoPath.GetFullPath(t.OutputPath), full, StringComparison.OrdinalIgnoreCase))
+                        return true;
+                }
+            }
+            catch { }
+            return false;
+        }
+
         public static bool Retry(string id)
         {
             DownloadTask t;
@@ -125,8 +165,29 @@ namespace AhoChatA.Vod
             if (RetryHttp(t)) return true;
             t.Error = ""; t.Progress = 0; t.Done = 0; t.Status = "queued";
             if (t.Type == "video") Task.Run(() => RunVideo(t.Id));
-            else if (t.Type == "music") Task.Run(async () => await RunMusic(t.Id, t.MusicSong, "standard", t.Title));
+            else if (t.Type == "music") Task.Run(async () => await RunMusic(t.Id, t.MusicSong, t.Quality, t.Title));
             else if (t.Type == "novel") Task.Run(() => RunNovel(t.Id));
+            return true;
+        }
+
+        /// <summary>统一取消入口：HTTP 任务真取消；历史里恢复出来的非运行任务至少改成「已取消」，避免按钮无反应。</summary>
+        public static bool Cancel(string id)
+        {
+            if (CancelHttp(id)) return true;
+            lock (_lock)
+            {
+                if (!_tasks.TryGetValue(id ?? "", out var t)) return false;
+                if (t.Status == "done" || t.Status == "canceled") return false;
+                if (t.Status == "downloading" || t.Status == "merging")
+                {
+                    // 这类任务没有可中断的 CTS，不能假装已取消
+                    return false;
+                }
+                t.Status = "canceled";
+                t.Error = L10n.T("下载已取消；可重试重新下载");
+                t.Progress = 0;
+            }
+            SaveHistory();
             return true;
         }
 
@@ -311,7 +372,7 @@ namespace AhoChatA.Vod
                 SetStatus(t, "downloading");
                 // 重试时若 s 为空，无法重建搜索上下文，直接失败（首次入队已带 s）
                 if (s == null) { Fail(t, "重试缺少歌曲上下文，请重新点击下载"); return; }
-                string path = await OnlineMusic.DownloadAsync(s, quality ?? "standard", name);
+                string path = await OnlineMusic.DownloadAsync(s, string.IsNullOrWhiteSpace(quality) ? "standard" : quality, name);
                 if (string.IsNullOrEmpty(path)) { Fail(t, L10n.T("下载失败（网络或存储不可用）")); return; }
                 t.OutputPath = path;
                 t.Progress = 100;
@@ -428,6 +489,15 @@ namespace AhoChatA.Vod
 
         // ---------------- m3u8 解析 ----------------
 
+        /// <summary>URL 路径是否以指定扩展名结尾（忽略查询串与片段）。</summary>
+        private static bool UrlPathEndsWith(string url, string ext)
+        {
+            var s = url ?? "";
+            int cut = s.IndexOfAny(new[] { '?', '#' });
+            if (cut >= 0) s = s.Substring(0, cut);
+            return s.EndsWith(ext, StringComparison.OrdinalIgnoreCase);
+        }
+
         private static List<string> ParseSegments(string m3u8, string baseUrl)
         {
             var list = new List<string>();
@@ -438,7 +508,7 @@ namespace AhoChatA.Vod
                 var line = lines[i].Trim();
                 if (line.Length == 0) continue;
                 if (line.StartsWith("#")) continue;
-                if (line.EndsWith(".m3u8", StringComparison.OrdinalIgnoreCase))
+                if (UrlPathEndsWith(line, ".m3u8"))
                 {
                     if (subPlaylist == null) subPlaylist = line;   // 记录主播放列表里的第一个子 m3u8
                     continue;
@@ -544,11 +614,14 @@ namespace AhoChatA.Vod
             public string Error = "";
             public string OutputPath = "";
             public string DirHint = "";
+            public string Quality = "";
             public string Url = "";
             public string DownloadInfo = "";
             public long AddedTicks;
             public long DownloadedBytes;
             public long TotalBytes = -1;
+            // 音乐失败任务重启后仍可重试：必须把歌曲上下文一起持久化
+            public OnlineSong MusicSong = null;
         }
 
         /// <summary>载入历史记录（只恢复已结束的任务；进行中的任务重启后已无上下文）。</summary>
@@ -579,11 +652,13 @@ namespace AhoChatA.Vod
                             Error = r.Error ?? "",
                             OutputPath = r.OutputPath ?? "",
                             DirHint = r.DirHint ?? "",
+                            Quality = r.Quality ?? "",
                             Url = r.Url ?? "",
                             DownloadInfo = r.DownloadInfo ?? "",
                             Added = r.AddedTicks > 0 ? new DateTime(r.AddedTicks, DateTimeKind.Utc) : DateTime.UtcNow,
                             DownloadedBytes = r.DownloadedBytes,
-                            TotalBytes = r.TotalBytes
+                            TotalBytes = r.TotalBytes,
+                            MusicSong = r.MusicSong
                         };
                     }
                 }
@@ -614,11 +689,13 @@ namespace AhoChatA.Vod
                             Error = t.Error,
                             OutputPath = t.OutputPath,
                             DirHint = t.DirHint,
+                            Quality = t.Quality,
                             Url = t.Url,
                             DownloadInfo = t.DownloadInfo,
                             AddedTicks = t.Added.Ticks,
                             DownloadedBytes = t.DownloadedBytes,
-                            TotalBytes = t.TotalBytes
+                            TotalBytes = t.TotalBytes,
+                            MusicSong = t.MusicSong
                         });
                     }
                 }
@@ -703,7 +780,7 @@ namespace AhoChatA.Vod
                     builder.SetContentText(L10n.T("下载完成，点击打开"))
                            .SetContentIntent(PendingIntent.GetActivity(ctx, t.Id.GetHashCode(),
                                new Intent(Intent.ActionView)
-                                   .SetDataAndType(Android.Net.Uri.FromFile(new Java.IO.File(t.OutputPath)), GetMimeType(t.OutputPath))
+                                   .SetDataAndType(FileProvider.GetUriForFile(ctx, "com.Ahochat.android.fileprovider", new Java.IO.File(t.OutputPath)), GetMimeType(t.OutputPath))
                                    .AddFlags(ActivityFlags.NewTask | ActivityFlags.GrantReadUriPermission),
                                PendingIntentFlags.Immutable | PendingIntentFlags.UpdateCurrent));
                 }

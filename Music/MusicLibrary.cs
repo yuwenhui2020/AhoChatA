@@ -71,6 +71,11 @@ namespace AhoChatA.Music
         private static readonly string[] ImgExt = { ".jpg", ".jpeg", ".png", ".webp", ".bmp" };
 
         /// <summary>内置默认目录：Music 默认启用，其余默认停用（按需勾选），避免把下载/相机里的无关文件扫进来。</summary>
+        // 下载目录（运行时解析）：加入检索范围并豁免 /Android/data 跳过规则，
+        // 否则在线音乐 / 浏览器下载的文件虽然落盘，却永远不会出现在本机影音列表。
+        private static string _musicDownloadDir = "";
+        private static string _httpDownloadDir = "";
+
         private static readonly MusicDir[] Presets =
         {
             new MusicDir { Path = "/storage/emulated/0/Music",        Label = L10n.T("Music（音乐）"),     BuiltIn = true, Enabled = true,  ForAudio = true,  ForVideo = true,  ForPhoto = false },
@@ -316,6 +321,28 @@ namespace AhoChatA.Music
                 // 后补的内置目录沿用预设默认状态（Movies 仅参与视频检索）
                 _cfg.Dirs.Add(Clone(p));
             }
+
+            AddRuntimeDir("Mchat 下载（音乐）", OnlineMusic.DownloadDir(), true, false, false, ref _musicDownloadDir);
+            AddRuntimeDir("Mchat 下载（影音）", AhoChatA.Vod.DownloadCenter.HttpDownloadsDir(), true, true, false, ref _httpDownloadDir);
+        }
+
+        private static void AddRuntimeDir(string label, string path, bool audio, bool video, bool photo, ref string cache)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(path)) return;
+                cache = path;
+                if (_cfg.Dirs.Any(d => string.Equals(d.Path, path, StringComparison.OrdinalIgnoreCase))) return;
+                _cfg.Dirs.Add(new MusicDir
+                {
+                    Path = path, Label = L10n.T(label), BuiltIn = true,
+                    Enabled = true, ForAudio = audio, ForVideo = video, ForPhoto = photo
+                });
+            }
+            catch (Exception ex)
+            {
+                Android.Util.Log.Warn("MusicLibrary", "加入下载目录失败: " + ex.Message);
+            }
         }
 
         public static void SaveDirs()
@@ -491,10 +518,20 @@ namespace AhoChatA.Music
         {
             if (!_cfg.SkipSystemSounds) return false;
             var p = path.Replace('\\', '/');
+            // 本应用自己的下载目录虽然位于 Android/data 下，但它是用户主动下载的媒体，
+            // 不能被通用规则误杀，否则下载完在音乐/视频列表里看不到。
+            if (IsUnder(p, _musicDownloadDir) || IsUnder(p, _httpDownloadDir)) return false;
             foreach (var seg in new[] { "/Ringtones/", "/Notifications/", "/Alarms/",
                                         "/Android/data/", "/Android/obb/", "/." })
                 if (p.IndexOf(seg, StringComparison.OrdinalIgnoreCase) >= 0) return true;
             return false;
+        }
+
+        private static bool IsUnder(string path, string root)
+        {
+            if (string.IsNullOrEmpty(root)) return false;
+            var r = root.Replace('\\', '/').TrimEnd('/') + "/";
+            return path.StartsWith(r, StringComparison.OrdinalIgnoreCase);
         }
 
         /// <summary>过滤过短 / 过小的音频（一般是提示音、录音碎片，不是歌）。</summary>

@@ -156,6 +156,10 @@
     <Compile Include="Warmup.cs" />
     <Compile Include="PrivacyActivity.cs" />
     <Compile Include="AcknowledgementsActivity.cs" />
+    <!-- 程序更新管理器：版本比较/下载/安装/mesh 更新卡片 -->
+    <Compile Include="UpdateManager.cs" />
+    <Compile Include="AboutActivity.cs" />
+    <Compile Include="ShareAppHelper.cs" />
     <Compile Include="CameraViewActivity.cs" />
     <Compile Include="StreamViewer.cs" />
     <Compile Include="Mp4Muxer.cs" />
@@ -245,6 +249,7 @@
     <Compile Include="DownloadActivity.cs" />
     <Compile Include="Chat\Convs.cs" />
     <Compile Include="Chat\Channels.cs" />
+    <Compile Include="Chat\LanPeerGate.cs" />
     <Compile Include="Chat\MsgUtil.cs" />
     <!-- 附件卡片：图片直接显示、视频显示封面、文件显示卡片；一次点击下载、再次点击打开 -->
     <Compile Include="Chat\MediaCard.cs" />
@@ -255,6 +260,7 @@
     <Compile Include="Chat\SyncListen.cs" />
     <Compile Include="Chat\VideoShare.cs" />
     <Compile Include="Chat\VideoCardView.cs" />
+    <Compile Include="Chat\UpdateCardView.cs" />
     <Compile Include="Chat\MediaShare.cs" />
     <Compile Include="Chat\MediaAutoOpen.cs" />
     <!-- 聊天媒体内置打开（图片/视频/音乐/书籍直投查看器）+ 系统分享统一入口 -->

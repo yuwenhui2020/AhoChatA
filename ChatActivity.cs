@@ -2222,6 +2222,28 @@ namespace AhoChatA
                 mv.LongClick += (s, e) => { ShowMessageMenu(captured); };
                 col.AddView(mv);
             }
+            else if (kind == "update")
+            {
+                // 程序更新卡片：版本 / 更新说明 / 下载状态 + 一键安装按钮
+                View uv;
+                try
+                {
+                    uv = new UpdateCardView(this, msg);
+                    uv.LayoutParameters = new LinearLayout.LayoutParams(
+                        (int)(Resources.DisplayMetrics.WidthPixels * 0.70), ViewGroup.LayoutParams.WrapContent);
+                }
+                catch (Exception ex)
+                {
+                    Android.Util.Log.Warn("Mchat", "更新卡片渲染失败: " + ex.Message);
+                    uv = new TextView(this) { Text = BubbleText(msg), TextSize = 15 };
+                }
+                var uLp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WrapContent, ViewGroup.LayoutParams.WrapContent);
+                uLp.RightMargin = Dp(4); uLp.LeftMargin = Dp(4);
+                uv.LayoutParameters = uLp;
+                uv.LongClick += (s, e) => { ShowMessageMenu(captured); };
+                col.AddView(uv);
+            }
             else if (mk != MediaKinds.None)
             {
                 View card;
@@ -2324,6 +2346,15 @@ namespace AhoChatA
                 case "voice": return "语音" + (Msg.Num(msg, "duration") > 0 ? " " + Msg.Num(msg, "duration") + "″" : "");
                 case "file": return Msg.FileLabel("file", Msg.Num(msg, "size"));
                 case "location": return "位置共享";
+                case "update":
+                    var card = UpdateManager.ParseCard(text);
+                    if (card != null)
+                    {
+                        var v = Msg.Str(card, "version", "");
+                        var ttl = Msg.Str(card, "title", "");
+                        return string.IsNullOrEmpty(v) ? ttl : ttl + " " + v;
+                    }
+                    return L10n.T("程序更新", "App update");
                 default:
                     var t = text ?? "";
                     if (Msg.Bool(msg, "edited")) t += L10n.T(" (已编辑)");
@@ -4689,6 +4720,10 @@ namespace AhoChatA
             other.AddView(BuildDivider());
             other.AddView(MeRow(L10n.T("鸣谢"), L10n.T("本程序使用的开源项目"),
                 () => StartActivity(new Intent(this, typeof(AcknowledgementsActivity)))));
+            other.AddView(BuildDivider());
+            other.AddView(MeRow(L10n.T("关于", "About"),
+                L10n.T("版本 " + UpdateManager.CurrentVersion + " · 检查更新", "Version " + UpdateManager.CurrentVersion + " · Check for updates"),
+                () => StartActivity(new Intent(this, typeof(AboutActivity)))));
 
             var ver = new TextView(this) { Text = L10n.T("AhoChat · 局域网优先的自组网聊天", "AhoChat · ad-hoc chat, LAN first"), TextSize = IosStyle.CaptionSize };
             ver.SetTextColor(new Color(unchecked((int)0xFFB0B4B8)));

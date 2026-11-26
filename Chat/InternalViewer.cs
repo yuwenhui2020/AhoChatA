@@ -80,6 +80,27 @@ namespace AhoChatA
             }
         }
 
+        /// <summary>网页端从后台服务发起系统分享：走 FileProvider，并加 NEW_TASK 允许从非 Activity 上下文启动。</summary>
+        public static void ShareFileFromService(Context ctx, string path, string mime = null)
+        {
+            if (ctx == null || string.IsNullOrEmpty(path) || !System.IO.File.Exists(path)) return;
+            try
+            {
+                var uri = FileProvider.GetUriForFile(ctx, "com.Ahochat.android.fileprovider", new Java.IO.File(path));
+                var send = new Intent(Intent.ActionSend);
+                send.SetType(string.IsNullOrEmpty(mime) ? MimeOf(path) : mime);
+                send.PutExtra(Intent.ExtraStream, uri);
+                send.AddFlags(ActivityFlags.GrantReadUriPermission | ActivityFlags.NewTask);
+                var chooser = Intent.CreateChooser(send, L10n.T("分享文件"));
+                chooser.AddFlags(ActivityFlags.NewTask);
+                ctx.StartActivity(chooser);
+            }
+            catch (Exception ex)
+            {
+                Android.Util.Log.Warn("InternalViewer", "网页端外部分享失败: " + ex.Message);
+            }
+        }
+
         /// <summary>按扩展名推断常见 MIME 类型（与聊天附件卡片一致的风格）。</summary>
         public static string MimeOf(string path)
         {

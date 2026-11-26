@@ -22,7 +22,13 @@
 
 **AhoChatA**（*ad-hoc chat, Android*）是一款安卓端的**自组网聊天工具**：同一个 Wi-Fi 下的两台手机、或手机与电脑，打开就能互相发现、直接聊天、通话、传文件——**没有服务器、没有注册登录，消息不经过任何云端**。
 
-没有路由器、没有网络时，它还能通过 **qaul（libp2p）**、**蓝牙自组网**、**WLAN Direct（Wi-Fi 直连）** 把设备连起来；跨网段/跨公网时，一台设备即可充当**中继**。
+**本程序无官方服务器，是真正的自组网：每一台设备地位完全对等，既是客户端也是路由器，共同组成对等网络（P2P mesh）。** 没有中心节点可以关停，也没有任何后台收集数据的服务。
+
+没有路由器、没有网络时，它还能通过 **qaul（libp2p）**、**蓝牙自组网**、**WLAN Direct（Wi-Fi 直连）** 把设备连起来；跨网段/跨公网时，一台设备即可充当**中继**——连接中继只是**多一个联网通信功能**，本地局域网能力与设备发现保持不变。
+
+> **主要用途**：在网络中断地区使用 **WLAN Direct** 构建对等网络，恢复基础通信功能。
+>
+> **合规约束**：禁止任何用户将本程序用于煽动任何国家的政治体系。项目仅提供通信技术，不承担使用方式带来的责任。
 
 > 本仓库是 AhoChat 系列的 **Android 客户端**；应用包名 `com.Ahochat.android`，应用名 `AhoChat`。
 
@@ -42,6 +48,26 @@
 | 影音 | 本地音乐 / 视频播放、歌词与封面、歌单、在线影视源（TVBox 订阅）、投屏 |
 | 系统增强 | DNS VPN 广告过滤（DoH / DoT）、短信转发、通知转发、悬浮窗、开机自启、后台常驻 |
 | 界面 | 中文 / English 双语，跟随系统语言自动切换，也可在「我的 → 语言」手动锁定；浅色 / 深色主题 |
+
+### 网络与频道约束
+
+| 规则 | 说明 |
+| --- | --- |
+| 蓝牙渠道原理 | 蓝牙链路采用 **bitchat** 的 BLE GATT mesh 原理：每个设备同时充当外设（GATT Server 广播）与中心（扫描连接），文本消息按信封逐跳中继。安装包外发走系统蓝牙分享或局域网 HTTP，不经 bitchat 文件协议。 |
+| 局域网定义 | 只有**双向互通**的设备才算同一局域网（hello ↔ probe ↔ hello 握手确认）。同一设备**不同网卡**下的设备同属一个局域网；**WLAN Direct** 视为另一张网卡，连接的设备同样属于局域网。 |
+| mesh 频道 | 默认 `chan:mesh` 的消息**绝不经中继流转**：只在完成双向确认的局域网设备间传输，不经过 qaul 公共节点、静态中继站或蓝牙逐跳，防止有人借中继节点广播不良信息。 |
+| 中继模式 | 连接中继只是**多一条联网通信渠道**，不改变本地行为：局域网组播 / 蓝牙广播扫描 / WLAN Direct 发现 / mDNS 照常开启，本地设备仍可发现、仍能在局域网私聊与频道聊天。**中继那边的远端设备不纳入本地发现列表**，中继仅作为跨网段 / 公网的通信渠道使用。 |
+| 频道临时性 | 加入的所有频道**退出程序即不保存**；下次启动只重建内置 `mesh` 默认频道。 |
+
+**局域网范围**：要求双向互通才算局域网；同一设备不同网卡下的所有设备可以组成同一个局域网；使用 WLAN Direct 连接的设备视为不同网卡，同样可以作为局域网。
+
+### 分享本程序
+
+「我的 → 关于 → 分享本程序」提供三种渠道：
+
+1. **安装链接**：gh-proxy 加速的 GitHub release 地址，可直接文本分享；
+2. **蓝牙 / 外部应用**：把本机安装包交给系统分享面板，可选择蓝牙发送到其它设备；
+3. **局域网文件共享**：把安装包放进网页 `/file` 共享根目录，同一局域网设备直接用浏览器下载。
 
 ### 技术栈
 
@@ -97,6 +123,17 @@ build.bat                构建 / 签名 / 安装脚本
 docs/screenshots/        README 截图
 ```
 
+### 更新日志
+
+**1.0.1**
+- 网页聊天界面与 App 统一：iOS 蓝气泡、圆形头像、5 分钟时间分隔。
+- 音乐 / 视频下载完成自动刷新，列表标注本地资源，新增分享到聊天频道 / 外部应用。
+- 修复内置浏览器 JS 跳转新标签后台打开与标签计数不更新；底栏图标适配夜间主题。
+- 新增自动更新管理器（gh-proxy 加速、版本比较、更新说明弹窗、mesh 频道更新卡片）与「关于」页。
+- 新增分享本程序：安装链接 / 蓝牙 / 局域网文件共享三种渠道。
+- mesh 频道收紧为局域网双向互通且绝不经中继；连接中继仅新增联网通信渠道，本地发现与局域网聊天不受影响，中继远端设备不纳入发现；频道退出即清空。
+- 修复通知栏 FileProvider 崩溃、网页翻译回调线程、m3u8 误判与下载重试上下文丢失。
+
 ### 许可
 
 MIT License，详见 [LICENSE](LICENSE)。
@@ -109,7 +146,13 @@ MIT License，详见 [LICENSE](LICENSE)。
 
 **AhoChatA** (*ad-hoc chat, Android*) is a **self-organising messenger for Android**. Two phones — or a phone and a PC — on the same Wi-Fi find each other and start chatting, calling and swapping files right away. **No server, no sign-up, and no cloud in the middle.**
 
-Without a router or any network it still links devices through **qaul (libp2p)**, **Bluetooth mesh** and **WLAN Direct**; across subnets or over the internet, any device can act as a **relay**.
+**There is no official server — this is a true ad-hoc network: every device is fully equal, acting as both client and router, forming a peer-to-peer mesh.**
+
+Without a router or any network it still links devices through **qaul (libp2p)**, **Bluetooth mesh** and **WLAN Direct**; across subnets or over the internet, any device can act as a **relay** — connecting to one simply adds an online communication channel and never disables local LAN discovery or chatting.
+
+> **Purpose**: rebuild peer-to-peer networks with **WLAN Direct** in areas without connectivity, restoring basic communications.
+>
+> **Compliance**: never use this app to incite the political system of any country.
 
 > This repository is the **Android client** of the AhoChat family. Package `com.Ahochat.android`, app name `AhoChat`.
 
@@ -129,6 +172,22 @@ Without a router or any network it still links devices through **qaul (libp2p)**
 | Media | Local music / video playback, lyrics and covers, playlists, online video sources (TVBox feeds), casting |
 | System extras | DNS VPN ad filtering (DoH / DoT), SMS forwarding, notification relay, floating window, boot autostart, background service |
 | UI | Chinese / English, switched automatically by system language or manually under **Me → Language**; light and dark themes |
+
+### Network & channel rules
+
+| Rule | Details |
+| --- | --- |
+| Bluetooth principle | The Bluetooth link uses **bitchat**'s BLE GATT mesh: every device is both a GATT server (advertising) and a central (scanning/connecting), relaying text messages hop by hop. Installer files are shared via the system Bluetooth share sheet or LAN HTTP, not a bitchat file protocol. |
+| LAN definition | Only **bidirectionally reachable** devices count as LAN (hello ↔ probe ↔ hello handshake). Devices behind **different network interfaces of the same machine** form one LAN; **WLAN Direct** peers count as another interface and belong to the LAN too. |
+| mesh channel | Messages in the default `chan:mesh` **never traverse a relay**: they stay inside the LAN between bidirectionally confirmed devices, never via qaul public nodes, static relays or Bluetooth hops. |
+| Relay mode | Connecting to a relay only **adds an online communication channel**: LAN multicast, BLE advertising/scanning, WLAN Direct discovery and mDNS stay on; local devices are still discoverable and LAN chats (including DMs) keep working. Remote devices behind the relay are **excluded from local discovery** — the relay is used purely as a transport. |
+| Ephemeral channels | Joined channels are **not saved on exit**; only the built-in `mesh` default channel is recreated at next launch. |
+
+**LAN scope**: bidirectional reachability is required; devices under different NICs of the same host form one LAN; WLAN Direct devices are treated as a separate NIC and are equally part of the LAN.
+
+### Sharing this app
+
+**Me → About → Share** offers three channels: (1) gh-proxy accelerated install link, (2) local installer via the system share sheet (Bluetooth target included), (3) copy the installer into the web `/file` LAN share root.
 
 ### Stack
 
@@ -183,6 +242,17 @@ Resources/layout/        native layouts (top bar, tab bar, call, camera)
 build.bat                build / sign / install script
 docs/screenshots/        screenshots used by this README
 ```
+
+### Changelog
+
+**1.0.1**
+- Web chat UI aligned with the native app: iOS blue bubbles, round avatars, 5-minute time separators.
+- Downloaded media auto-refreshes, is marked local, and can be shared to a channel or external app.
+- Fixed browser JS pop-ups opening in the background with a stale tab count; dark-mode toolbar icons.
+- Added auto-update manager (gh-proxy, segmented version compare, release notes, mesh update card) and an About screen.
+- Added app sharing: install link / Bluetooth / LAN file share.
+- mesh is now LAN-only with bidirectional confirmation and never relayed; connecting a relay only adds an online channel without disabling local discovery or chat, and relay-side devices are kept out of discovery; channels are cleared on exit.
+- Fixed FileProvider notification crash, translation callback thread, m3u8 misdetection and retry context loss.
 
 ### License
 

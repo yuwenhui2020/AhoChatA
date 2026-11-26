@@ -23,6 +23,9 @@
     var since = 0;
     var polling = false;
     var renderedIds = Object.create(null);
+    // 上一条插入时间分隔行的时间戳：与原生 App 一样，间隔超过 5 分钟才显示时间
+    var lastTimeMark = 0;
+    var TIME_MARK_GAP = 5 * 60 * 1000;
 
     // 当前房间（会话）：「房间号」即频道键，默认 mesh，与 App 端的房间逻辑一致。
     var conv = '';
@@ -53,6 +56,31 @@
         var d = new Date(ts || Date.now());
         var h = d.getHours(), m = d.getMinutes();
         return (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m;
+    }
+
+    // 与 ChatActivity.Initial / AvatarColor 保持同一套规则：
+    // 取第一个字母、数字或汉字；头像颜色按 UTF-16 码元哈希到 8 色调色板。
+    function initialOf(s) {
+        var str = String(s || '');
+        for (var i = 0; i < str.length; i++) {
+            var ch = str.charAt(i), code = str.charCodeAt(i);
+            if (/[0-9A-Za-z]/.test(ch) || code > 0x2E80) {
+                return ch.toUpperCase();
+            }
+        }
+        return '?';
+    }
+
+    function avatarColor(s) {
+        var palette = [
+            '#4C9AFF', '#34C759', '#FF9F0A', '#9B59F6',
+            '#FF3B30', '#32ADE6', '#AF52DE', '#30B0C7'
+        ];
+        var str = String(s || '');
+        if (!str) return palette[0];
+        var h = 0;
+        for (var i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) & 0x7FFFFFFF;
+        return palette[h % palette.length];
     }
 
     function formatTime(sec) {
@@ -561,6 +589,7 @@
     function resetAndReload() {
         since = 0;
         renderedIds = Object.create(null);
+        lastTimeMark = 0;
         if (els.list) els.list.innerHTML = '';
         renderConvs();
         loadConvs();
@@ -719,11 +748,15 @@
 
         var isOut = msg.from === self.guestId;
 
-        // 时间戳独立成行、整行居中显示在消息上方
-        var timeRow = document.createElement('div');
-        timeRow.className = 'msg-time-row';
-        timeRow.textContent = formatClock(msg.time);
-        els.list.appendChild(timeRow);
+        // 间隔超过 5 分钟才插入居中时间行，和原生 App 的 AppendMessage 一致
+        var ts = Number(msg.time) || Date.now();
+        if (ts - lastTimeMark > TIME_MARK_GAP) {
+            var timeRow = document.createElement('div');
+            timeRow.className = 'msg-time-row';
+            timeRow.textContent = formatClock(ts);
+            els.list.appendChild(timeRow);
+            lastTimeMark = ts;
+        }
 
         var row = document.createElement('div');
         row.className = 'msg-row ' + (isOut ? 'out' : 'in');
@@ -731,7 +764,9 @@
 
         var avatar = document.createElement('div');
         avatar.className = 'avatar';
-        avatar.textContent = (msg.fromName || '?').charAt(0).toUpperCase();
+        var who = msg.fromName || (isOut ? self.name : '') || '?';
+        avatar.textContent = initialOf(who);
+        avatar.style.background = avatarColor(who);
         row.appendChild(avatar);
 
         var main = document.createElement('div');
@@ -922,6 +957,9 @@
 
             // 视频分享卡片（播放器里手动点「分享」生成）
             case 'videocard': { renderVideoShareCard(bubble, msg); break; }
+
+            // 程序更新卡片（网页端无原生桥，仅展示信息 + 主页链接）
+            case 'update': { renderUpdateCard(bubble, msg); break; }
 
             case 'voice': {
                 bubble.classList.add('plain');
@@ -1466,9 +1504,42 @@
         bubble.appendChild(card);
     }
 
+    /** 程序更新卡片：网页端无原生桥，展示版本/说明/状态 + 主页链接；安装请在 App 内点击。 */
+    function renderUpdateCard(bubble, msg) {
+        bubble.classList.add('plain');
+        var card = document.createElement('div');
+        card.style.cssText = 'width:250px;border-radius:12px;padding:12px;background:#fff;color:#111;box-shadow:0 1px 3px rgba(0,0,0,.12);font-size:13px';
+        var data = null;
+        try { data = JSON.parse(msg.text || ''); } catch (e) {}
+        if (!data || data.schema !== 'mchat.update.v1') {
+            card.textContent = '程序更新';
+            bubble.appendChild(card);
+            return;
+        }
+        function line(txt, color, size, bold) {
+            var d = document.createElement('div');
+            d.textContent = txt;
+            d.style.cssText = 'color:' + color + ';font-size:' + size + 'px' + (bold ? ';font-weight:600' : '') + ';margin:2px 0';
+            return d;
+        }
+        card.appendChild(line('程序更新  ' + (data.version || ''), '#111', 15, true));
+        card.appendChild(line(data.title || '', '#007aff', 13, false));
+        if (data.notes) card.appendChild(line(data.notes, '#555', 13, false));
+        if (data.status) card.appendChild(line(data.status, '#8e8e93', 12, false));
+        var tip = line('请在 App 内点击安装', '#8e8e93', 11, false);
+        card.appendChild(tip);
+        card.style.cursor = 'pointer';
+        card.addEventListener('click', function () {
+            var u = data.home || 'https://github.com/yuwenhui2020/AhoChatA';
+            try { window.open(u, '_blank'); } catch (e) {}
+        });
+        bubble.appendChild(card);
+    }
+
     function linkify(text) {
+        // 先转义再拼链接；颜色交给 CSS，蓝底气泡内自动变白字。
         return escapeHtml(text).replace(/(https?:\/\/[^\s<]+)/g, function (u) {
-            return '<a href="#" data-href="' + u + '" style="color:#576b95">' + u + '</a>';
+            return '<a href="#" class="msg-bubble-link" data-href="' + u + '">' + u + '</a>';
         });
     }
 

@@ -146,59 +146,43 @@ namespace AhoChatA
 
         private void Load()
         {
+            // 需求：加入的所有频道退出程序即不保存。
+            // 启动时清掉历史落盘数据，本次运行只在内存里维护频道；
+            // 下次启动只有内置 mesh 默认频道会被重建。
             try
             {
                 var prefs = ctx.GetSharedPreferences("Mchat", FileCreationMode.Private);
-                var raw = prefs.GetString(PrefKey, null);
-                if (string.IsNullOrEmpty(raw)) return;
-                var arr = JArray.Parse(raw);
-                foreach (var o in arr)
-                {
-                    var name = (string)o["n"];
-                    if (string.IsNullOrEmpty(name)) continue;
-                    var ch = new Channel { Name = Convs.NormalizeChannel(name), Title = Strip((string)o["t"]) };
-                    var links = o["l"] as JArray;
-                    if (links != null)
-                        foreach (var l in links)
-                            if (l.Type != JTokenType.Null) ch.Links.Add(l.ToString());
-                    ch.Joined = o["j"] == null ? true : ((bool?)o["j"] ?? true);
-                    ch.EnsureDefaultLinks();
-                    // 旧版本曾把默认频道强制收敛为「仅局域网」；现在所有频道链路一视同仁，
-                    // 把这种遗留数据迁移回默认链路（qaul + 局域网）。
-                    if (string.Equals(ch.Name, DefaultChannelName, StringComparison.OrdinalIgnoreCase)
-                        && ch.Links.Count == 1 && ch.Links.Contains(ChanLink.Lan))
-                        ch.Links = new HashSet<string>(StringComparer.Ordinal);
-                    ch.EnsureDefaultLinks();
-                    map[ch.Name] = ch;
-                }
+                if (!string.IsNullOrEmpty(prefs.GetString(PrefKey, null)))
+                    prefs.Edit().Remove(PrefKey).Apply();
             }
             catch (Exception ex)
             {
-                Android.Util.Log.Warn("Channels", "读取频道失败: " + ex.Message);
+                Android.Util.Log.Warn("Channels", "清理历史频道失败: " + ex.Message);
             }
         }
 
         private void SaveLocked()
         {
-            try
+            // 需求：频道不跨进程保存。保留方法以维持原有调用点，但不再写 SharedPreferences。
+        }
+
+        /// <summary>该 conv 是否为已加入频道（中继模式下只允许已加入频道聊天）。</summary>
+        public bool IsJoinedConv(string conv)
+        {
+            var n = Convs.ChanName(conv ?? "");
+            if (string.IsNullOrEmpty(n)) return false;
+            lock (gate) return map.TryGetValue(n, out var c) && c.Joined;
+        }
+
+        /// <summary>退出前清空内存中的非默认频道（默认 mesh 每次启动都会重建）。</summary>
+        public void ClearForExit()
+        {
+            lock (gate)
             {
-                var arr = new JArray();
-                foreach (var c in map.Values)
-                {
-                    arr.Add(new JObject
-                    {
-                        ["n"] = c.Name,
-                        ["t"] = c.Title,
-                        ["j"] = c.Joined,
-                        ["l"] = new JArray(c.LinkList())
-                    });
-                }
-                var prefs = ctx.GetSharedPreferences("Mchat", FileCreationMode.Private);
-                prefs.Edit().PutString(PrefKey, arr.ToString(Newtonsoft.Json.Formatting.None)).Apply();
-            }
-            catch (Exception ex)
-            {
-                Android.Util.Log.Warn("Channels", "保存频道失败: " + ex.Message);
+                var def = Convs.NormalizeChannel(DefaultChannelName);
+                foreach (var key in map.Keys.Where(k => !string.Equals(k, def, StringComparison.OrdinalIgnoreCase)).ToList())
+                    map.Remove(key);
+                if (map.TryGetValue(def, out var d)) d.Joined = true;
             }
         }
 

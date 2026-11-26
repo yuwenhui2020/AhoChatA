@@ -213,6 +213,11 @@ body.theme-light .card-art .ph, [data-theme="light"] .card-art .ph { color: rgba
   background: rgba(0,0,0,.72); color: #fff; font-size: 10px;
   padding: 2px 6px; border-radius: 5px;
 }
+.card-art .local-badge {
+  position: absolute; z-index: 2; left: 7px; top: 7px;
+  background: rgba(0,122,255,.92); color: #fff; font-size: 10px;
+  padding: 2px 7px; border-radius: 999px; letter-spacing: .2px;
+}
 .card-art .play-fab {
   position: absolute; inset: 0; z-index: 3; display: grid; place-items: center;
   background: rgba(0,0,0,.35); opacity: 0; transition: opacity .16s;
@@ -507,6 +512,7 @@ body.theme-light .card-art .ph, [data-theme="light"] .card-art .ph { color: rgba
 }
 .item-menu button:hover { background: var(--card2); color: var(--accent2); }
 .item-menu button.danger:hover { color: var(--danger); }
+.item-menu button.muted { opacity: .5; }
 .item-menu hr { border: 0; border-top: 1px solid var(--line); margin: 5px 2px; }
 
 .toast {
@@ -528,7 +534,9 @@ body.theme-light .card-art .ph, [data-theme="light"] .card-art .ph { color: rgba
   .only-mobile { display: grid; }
   .only-desktop { display: none; }
   .now-meta { width: 110px; }
-  .now-right { display: none; }
+  /* 窄屏不再整组隐藏控制：喜欢/歌词/循环/随机/队列保持可达，仅收紧间距 */
+  .now-right { gap: 2px; }
+  .now-right .icon-btn { width: 30px; height: 30px; }
   .now-time { display: none; }
   .view-head { padding: 16px 14px 10px; }
   .content { padding: 4px 14px 24px; }
@@ -755,12 +763,14 @@ body.theme-light .card-art .ph, [data-theme="light"] .card-art .ph { color: rgba
   .pill-btn span { display: none; }
 }
 
-/* ===== 播放条窄屏：保证不溢出视口 ===== */
+/* ===== 播放条窄屏：音量滑块可收起，功能按钮始终保留 ===== */
 @media (max-width: 1180px) { .vol { display: none; } }
 @media (max-width: 1040px) {
-  .now-right { display: none; }
+  .now-right { gap: 2px; }
   .now-time { display: none; }
 }
+/* 极窄屏：时间也收起，但按钮仍在 */
+@media (max-width: 520px) { .now-right .icon-btn { width: 28px; height: 28px; } }
 
 /* ===== 一起听 / 一起看 自动发现提示条 =====
    固定在顶栏下方，高于 dialog / vod-overlay / toast 等常规弹层，

@@ -33,6 +33,8 @@
     queue: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10"/></svg>',
     shuffle: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 7.5h3.6l9 9h4.2M3.5 16.5h3.6l9-9h4.2M18 4.8l2.6 2.7L18 10.2M18 13.8l2.6 2.7L18 19.2"/></svg>',
     download: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7.5 10.5L12 15l4.5-4.5M5 19h14"/></svg>',
+    share: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5.5" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="18.5" r="2.5"/><path d="M8.3 10.8l7.4-4.1M8.3 13.2l7.4 4.1"/></svg>',
+    external: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9"/><path d="M19 14v5a1 1 0 01-1 1H5a1 1 0 01-1-1V6a1 1 0 011-1h5"/></svg>',
     music: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="17" r="2.6"/><circle cx="17" cy="15" r="2.6"/><path d="M10.6 17V7.2l9-2v9.8"/></svg>',
     volume: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9.5h3.5L13 5.5v13L7.5 14.5H4z"/><path d="M16.4 9a4 4 0 010 6"/></svg>',
     mute: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9.5h3.5L13 5.5v13L7.5 14.5H4z"/><path d="M16.5 9.5l4 5M20.5 9.5l-4 5"/></svg>',
@@ -377,6 +379,7 @@
       <div class="card-art">
         ${img}
         <div class="ph">${icon('note')}</div>
+        ${s.downloaded ? `<span class="local-badge">${s.isVideo ? '本地视频' : '本地音乐'}</span>` : ''}
         ${s.duration ? `<span class="dur">${esc(s.durationText)}</span>` : ''}
         <div class="play-fab"><span>${icon('play')}</span></div>
       </div>
@@ -856,8 +859,11 @@
         + '&name=' + enc(s.title) + '&artist=' + enc(s.artist || '') + '&duration=' + enc(s.duration || 0)
         + '&cover=' + enc(s.cover || s.pic || ''));
       const d = await r.json();
-      if (d && d.ok) toast('已加入下载队列，可在「下载」中心查看进度');
-      else toast('下载失败：' + ((d && d.error) || '未知'));
+      if (d && d.ok) {
+        toast('已加入下载队列，完成后会自动刷新本地音乐列表');
+        // 不阻塞当前操作：完成后自动把新歌写进列表并打上「本地音乐」角标
+        waitDownload(d.id, () => load());
+      } else toast('下载失败：' + ((d && d.error) || '未知'));
     } catch (e) { toast('下载失败：' + e.message); }
   }
 
@@ -889,6 +895,74 @@
     });
   }
 
+  /* ---------------- 下载完成跟踪 / 本地媒体分享 ---------------- */
+
+  const isHls = (s) => !!(s && (s.hls || /\.(m3u8|ts)(\?|$)/i.test(s.path || '')));
+
+  /** 启动下载后轮询任务状态，完成后自动刷新影音库；无需用户手动重进页面。 */
+  async function waitDownload(id, onDone) {
+    if (!id) return false;
+    const deadline = Date.now() + 15 * 60 * 1000;
+    while (Date.now() < deadline) {
+      await new Promise(r => setTimeout(r, 1500));
+      let d = null;
+      try { d = await (await fetch(api('vod/download?op=list'))).json(); } catch (e) { continue; }
+      const t = (d.list || []).find(x => x.id === id);
+      if (!t) continue;
+      if (t.status === 'done') {
+        toast('已下载到本地，正在刷新影音列表');
+        if (onDone) await onDone();
+        return true;
+      }
+      if (t.status === 'failed' || t.status === 'canceled') {
+        toast(t.status === 'canceled' ? '下载已取消' : ('下载失败：' + (t.error || '未知错误')));
+        return false;
+      }
+    }
+    return false;
+  }
+
+  /** 从宿主会话列表里挑一个支持文件传输的频道 / qaul 会话。 */
+  function pickChannel() {
+    return fetch('/api/conv').then(r => r.json()).then(d => {
+      const items = (d.items || []).filter(c => /^(chan:|qaul:|qgroup:)/.test(c.id || ''));
+      if (!items.length) { toast('还没有可分享的频道或 qaul 会话'); return ''; }
+      return new Promise(resolve => {
+        const html = `<div class="dialog-tip">选择接收的频道 / 会话</div>
+          <select id="dlgInput" style="width:100%;margin-top:10px;padding:9px;border-radius:8px;background:var(--card2);color:var(--text)">
+          ${items.map(c => `<option value="${esc(c.id)}">${esc(c.title || c.id)}</option>`).join('')}</select>`;
+        const cancel = $('dlgCancel'), mask = $('dialog');
+        const onCancel = () => finish('');
+        const onMask = (e) => { if (e.target.id === 'dialog') finish(''); };
+        const finish = (v) => {
+          if (cancel) cancel.removeEventListener('click', onCancel);
+          mask.removeEventListener('click', onMask);
+          resolve(v);
+        };
+        showDialog('分享到聊天频道', html, () => finish($('dlgInput') ? $('dlgInput').value : ''), '分享');
+        if (cancel) cancel.addEventListener('click', onCancel);
+        mask.addEventListener('click', onMask);
+      });
+    }).catch(() => { toast('读取会话列表失败'); return ''; });
+  }
+
+  async function shareLocal(s, external) {
+    if (!s || !s.path) return;
+    if (external && isHls(s)) { toast('m3u8 / HLS 不支持分享到外部应用，请分享到聊天频道'); return; }
+    const body = { path: s.path, external: !!external };
+    if (!external) {
+      body.conv = await pickChannel();
+      if (!body.conv) return;
+    }
+    try {
+      const r = await fetch(api('share'), {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+      });
+      const d = await r.json();
+      toast(d.ok ? (external ? '已交给系统分享' : '已分享到聊天频道') : (d.error || '分享失败'));
+    } catch (e) { toast('分享失败：' + e.message); }
+  }
+
   /* ---------------- 三点菜单 ---------------- */
 
   function openMenu(x, y, s) {
@@ -905,6 +979,9 @@
         : '<button data-act="newlist">＋ 新建歌单并加入</button>'}
         ${view === 'playlist' && listId && !S.playlists.find(p => p.id === listId)?.isFavorites
           ? '<button data-act="removelist">－ 从本歌单移出</button>' : ''}`}
+      ${s.downloaded ? `<hr>
+        <button data-act="shareChannel">${icon('share')} 分享到聊天频道</button>
+        <button data-act="shareApp" class="${isHls(s) ? 'muted' : ''}">${icon('external')} 分享到外部应用${isHls(s) ? '（m3u8 不支持）' : ''}</button>` : ''}
       <hr><button data-act="exclude" class="danger">从列表移除</button>`;
     m.hidden = false;
     const w = 190, h = m.offsetHeight;
@@ -935,6 +1012,8 @@
       case 'removelist':
         await post('playlist?op=remove&id=' + enc(listId) + '&path=' + enc(s.path));
         toast('已从歌单移出'); await load(); break;
+      case 'shareChannel': await shareLocal(s, false); break;
+      case 'shareApp': await shareLocal(s, true); break;
       case 'exclude':
         confirmText('从列表移除', '只移出列表，不会删除磁盘文件。可在「检索目录」里恢复。',
           async () => { await post('exclude?op=add&path=' + enc(s.path)); toast('已移出列表'); await load(); });
@@ -1035,11 +1114,30 @@
     loadCurrent(true); renderQueue();
   };
   $('btnNext').onclick = () => nextSong(false);
-  $('seekWrap').onclick = (e) => {
-    if (!audio.duration) return;
+  // 音频进度条：从"只能点击跳转"升级为 pointer 拖拽 + 实时时间预览（与视频控件一致）
+  let aSeeking = false;
+  function aSeekRatio(e) {
     const r = $('seekWrap').getBoundingClientRect();
-    audio.currentTime = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * audio.duration;
-  };
+    return Math.max(0, Math.min(1, (e.clientX - r.left) / Math.max(1, r.width)));
+  }
+  if ($('seekWrap')) $('seekWrap').addEventListener('pointerdown', (e) => {
+    if (!audio.duration) return;
+    aSeeking = true;
+    const p = aSeekRatio(e) * audio.duration;
+    $('nowTime').textContent = fmt(p * 1000) + ' / ' + fmt(audio.duration * 1000);
+    try { $('seekWrap').setPointerCapture(e.pointerId); } catch (err) {}
+  });
+  if ($('seekWrap')) $('seekWrap').addEventListener('pointermove', (e) => {
+    if (!aSeeking || !audio.duration) return;
+    const ratio = aSeekRatio(e), p = ratio * audio.duration;
+    $('nowTime').textContent = fmt(p * 1000) + ' / ' + fmt(audio.duration * 1000);
+    $('seekFill').style.width = (ratio * 100) + '%';
+  });
+  if ($('seekWrap')) $('seekWrap').addEventListener('pointerup', (e) => {
+    if (!aSeeking) return;
+    aSeeking = false;
+    try { audio.currentTime = aSeekRatio(e) * (audio.duration || 0); } catch (err) {}
+  });
   $('btnRepeat').onclick = () => {
     repeat = (repeat + 1) % 3;
     $('btnRepeat').textContent = ['顺序', '列表', '单曲'][repeat];
@@ -1595,6 +1693,7 @@
   window.LCMedia = {
     api, enc, esc, toast,
     dialog: showDialog, closeDialog,
+    waitDownload, loadLibrary: load,
     stopVideo, refresh: renderView,
     showVideoControls, updateVideoSeek,
     getView: () => view
@@ -1888,10 +1987,13 @@
       var want = syncNow();
       var cur = (syncAudio.currentTime || 0) * 1000;
       var d = want - cur;
-      if (Math.abs(d) > 1500) {
+      var ad = Math.abs(d);
+      // 小偏差用 playbackRate 平滑追赶，只有大偏差（>5s，例如切歌/重新进场）才直接 seek，
+      // 避免每次轮询都跳秒造成卡顿与刺耳的音频断裂。
+      if (ad > 5000) {
         try { syncAudio.currentTime = Math.max(0, want / 1000); syncAudio.playbackRate = 1; } catch (e) {}
-      } else if (Math.abs(d) > 300) {
-        syncAudio.playbackRate = 1 + d / 6000;
+      } else if (ad > 250) {
+        syncAudio.playbackRate = Math.max(0.5, Math.min(1.5, 1 + d / 6000));
       } else {
         syncAudio.playbackRate = 1;
       }
@@ -1914,9 +2016,13 @@
     sync.lastStatus = null; sync.pendingSeek = null;
     var bs = $('btnSync'); if (bs) bs.classList.add('on');
     syncShow(true);
-    // 共享听接管时暂停本机普通播放器，避免双音
-    try { if (!audio.paused) audio.pause(); } catch (e) {}
-    toast('已开启共享听，等待 App 发起播放 / 一起听…');
+    // 共享听接管时暂停本机普通播放器，避免双音；明确告知用户为何"自己的歌停了"
+    var wasPlaying = false;
+    try { wasPlaying = !audio.paused; } catch (e) {}
+    try { if (wasPlaying) audio.pause(); } catch (e) {}
+    toast(wasPlaying
+      ? '已开启共享听，本机播放已暂停以避免双音，等待 App 发起播放…'
+      : '已开启共享听，等待 App 发起播放 / 一起听…');
     syncTick();
     syncCorrect();
     // 自动发现点「确定」时把当前状态帧直接应用，立刻起播并对齐进度

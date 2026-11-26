@@ -483,5 +483,12 @@ window.Bridge = (function () {
                 return AndroidMchat.openWatchTogether(url, title || '', cardId || '', host || '') === true;
             } catch (e) { return false; }
         },
+
+        /** 程序更新卡片：安装 UpdateManager 已下载的 APK。 */
+        installApk: function (name) {
+            if (!hasLan || !name) return false;
+            try { return AndroidMchat.installApk(String(name)) === true; }
+            catch (e) { return false; }
+        },
     };
 })();

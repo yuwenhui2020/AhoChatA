@@ -7,6 +7,7 @@
 
 	<!-- 各界面在「最近任务」里显示的名称 -->
 	<string name="act_ack">Acknowledgements</string>
+	<string name="act_about">About</string>
 	<string name="act_apk_install">Install APK</string>
 	<string name="act_browser">Browser</string>
 	<string name="act_call">Call</string>

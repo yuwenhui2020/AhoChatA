@@ -27,6 +27,9 @@ namespace AhoChatA.Vod
             var external = context.GetExternalFilesDir(Android.OS.Environment.DirectoryDownloads);
             return System.IO.Path.Combine(external != null ? external.AbsolutePath : context.FilesDir.AbsolutePath, "Mchat");
         }
+
+        /// <summary>供媒体库把浏览器/在线视频下载目录纳入扫描，避免下载完在影音列表里看不到。</summary>
+        public static string HttpDownloadsDir() => HttpOutputDir();
         static readonly Dictionary<string, HttpContext> HttpContexts = new Dictionary<string, HttpContext>();
         public static DownloadTask QueueHttp(string url, string title = null, string cookie = null, string userAgent = null, string referer = null, string keyOverride = null, bool forceHls = false)
         {

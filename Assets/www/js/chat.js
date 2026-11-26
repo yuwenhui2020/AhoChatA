@@ -113,6 +113,9 @@ window.Chat = (function () {
         // 视频分享卡片（播放器里手动点「分享」生成，点击全屏播放）
         if (msg.kind === 'videocard') { renderVideoShareCard(bubble, msg); return; }
 
+        // 程序更新卡片（带一键安装按钮）
+        if (msg.kind === 'update') { renderUpdateCard(bubble, msg); return; }
+
         switch (msg.kind) {
             case 'voice': {
                 bubble.classList.add('plain');
@@ -544,6 +547,51 @@ window.Chat = (function () {
         card.appendChild(row);
         card.addEventListener('click', openPlain);
         bubble.appendChild(card);
+    }
+
+    /** 程序更新卡片：解析 msg.text 里的 JSON，显示版本/说明/状态 + 安装/主页按钮。 */
+    function renderUpdateCard(bubble, msg) {
+        var card = null;
+        try { card = JSON.parse(msg.text || ''); } catch (e) {}
+        if (!card || card.schema !== 'mchat.update.v1') {
+            var t = document.createElement('div');
+            t.textContent = '程序更新';
+            bubble.appendChild(t);
+            return;
+        }
+        var box = document.createElement('div');
+        box.style.cssText = 'background:var(--card,#fff);border:1px solid var(--line,#e8eaee);border-radius:12px;padding:12px;min-width:220px;max-width:300px';
+        function line(txt, color, size, bold) {
+            var d = document.createElement('div');
+            d.textContent = txt;
+            d.style.cssText = 'color:' + color + ';font-size:' + size + 'px' + (bold ? ';font-weight:600' : '') + ';margin:2px 0';
+            return d;
+        }
+        box.appendChild(line('程序更新  ' + (card.version || ''), 'var(--text,#111)', 15, true));
+        box.appendChild(line(card.title || '', 'var(--accent,#007aff)', 13, false));
+        if (card.notes) box.appendChild(line(card.notes, 'var(--sub,#555)', 13, false));
+        if (card.status) box.appendChild(line(card.status, 'var(--sub,#8e8e93)', 12, false));
+
+        var row = document.createElement('div');
+        row.style.cssText = 'display:flex;justify-content:flex-end;gap:6px;margin-top:8px';
+        function mk(text, bg, fg, fn) {
+            var b = document.createElement('button');
+            b.type = 'button'; b.textContent = text;
+            b.style.cssText = 'border:0;background:' + bg + ';color:' + fg + ';border-radius:10px;padding:5px 12px;font-size:12px;cursor:pointer';
+            b.onclick = function (ev) { ev.stopPropagation(); fn(); };
+            return b;
+        }
+        if (card.apk) row.appendChild(mk('安装', '#e8f7fe', '#007aff', function () {
+            try {
+                var ok = window.Bridge && window.Bridge.installApk && window.Bridge.installApk(card.apk);
+                if (!ok) window.Bridge && window.Bridge.toast && window.Bridge.toast('安装包不存在，请重新检测更新');
+            } catch (e) {}
+        }));
+        row.appendChild(mk('主页', '#f0f0f0', '#555', function () {
+            try { window.Browser && window.Browser.openInNewTab && window.Browser.openInNewTab(card.home || 'https://github.com/yuwenhui2020/AhoChatA'); } catch (e) {}
+        }));
+        box.appendChild(row);
+        bubble.appendChild(box);
     }
 
     /** 无封面占位：浅灰圆角方块 + 柔光圆 + 居中双音符（与 App 端一致，不显示程序图标）。 */

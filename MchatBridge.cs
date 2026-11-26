@@ -843,6 +843,8 @@ namespace AhoChatA
                 staticRelays.Add(new RelayEndpoint { Host = h, Port = port });
             }
             SaveStaticRelays();
+            // 配置中继站只是新增一条联网通信渠道，本地局域网发现与聊天保持不变
+            try { ApplyRelayModeRestrictions(); } catch { }
             // 握手要建 TCP 连接，放到后台，避免卡住调用方（多为 UI 线程）
             Task.Run(() =>
             {
@@ -908,11 +910,15 @@ namespace AhoChatA
                 }
             }
             catch { }
+            // 启动时若已有中继站，记录联网通信渠道状态（不影响本地发现）
+            try { ApplyRelayModeRestrictions(); } catch { }
         }
 
         /// <summary>周期重发握手，保证中转站重启 / 链路中断后能自动恢复。</summary>
         private void HandshakeRelays()
         {
+            // qaul 节点发生过中继转发时也记录联网通信渠道状态
+            try { ApplyRelayModeRestrictions(); } catch { }
             List<RelayEndpoint> copy;
             lock (staticRelays) copy = new List<RelayEndpoint>(staticRelays);
             foreach (var r in copy)
@@ -2090,6 +2096,17 @@ namespace AhoChatA
         }
 
         /// <summary>
+        /// 网页端「程序更新卡片」点击安装按钮：安装 UpdateManager 已下载的 APK。
+        /// 返回是否成功转交系统安装器。
+        /// </summary>
+        [Java.Interop.Export("installApk")]
+        [JavascriptInterface]
+        public bool InstallApk(string fileName)
+        {
+            return UpdateManager.InstallApk(fileName);
+        }
+
+        /// <summary>
         /// 「一起听」：网页端音乐卡片点「一起听」时，把整条共享播放列表装进本机播放器。
         /// playlistJson 为卡片里的精简 JSON 数组；返回是否成功起播。
         /// </summary>
@@ -3226,8 +3243,9 @@ namespace AhoChatA
                                     if (UseQaulNativeMessaging) SendQaulViaNode(conv, armored, maxRelay);
                                     break;
                                 case ChanLink.Lan:
+                                    // mesh 信标同样不得经静态中转站外发
                                     if (preferUdp && SendDiscoveryEnvelope(conv, armored)) break;
-                                    BroadcastFrame(RawFrame(conv, armored), null, conv);
+                                    BroadcastFrame(RawFrame(conv, armored), null, conv, IsMeshConv(conv));
                                     break;
                                 case ChanLink.P2p:
                                     if (p2pEnabled && p2p != null) p2p.BroadcastFrame(RawFrame(conv, armored), null, tcpPort);
@@ -4234,6 +4252,30 @@ namespace AhoChatA
             var kind = Msg.Kind(msg);
             var conv = Msg.Conv(msg);
             msg["conv"] = conv;
+
+            // mesh 频道只接受局域网链路，且对端必须完成双向互通握手。
+            // 局域网 = 普通网卡（lan）+ WLAN Direct（p2p，视为另一张网卡）。
+            // 经 qaul 中继 / 蓝牙逐跳 / 静态中转站来的 mesh 一律丢弃。
+            if (IsMeshConv(conv))
+            {
+                var src = source ?? "";
+                bool lanLink = string.Equals(src, ChanLink.Lan, StringComparison.Ordinal)
+                            || string.Equals(src, ChanLink.P2p, StringComparison.Ordinal);
+                if (!lanLink)
+                {
+                    mesh.NoteDrop(source, L10n.T("mesh 频道仅允许局域网传输"));
+                    return;
+                }
+                if (!LanPeerGate.IsConfirmed(Msg.Str(msg, "from")))
+                {
+                    mesh.NoteDrop(source, L10n.T("对端未完成局域网双向确认"));
+                    return;
+                }
+            }
+
+            // 中继只是额外联网渠道：私聊与所有频道照常接收。
+            // 不再因为连了中继就阻断局域网私聊或未加入频道；
+            // mesh 频道仍受上面的 LAN-only + 双向确认约束，绝不经中继。
 
             // 「一起听 / 同步听」：局域网帧的源 IP 就是发起端可达地址。
             // 发起端偶尔拿不到本机 LAN IP（HostBase 退化成 127.0.0.1），对端若直接拿
@@ -5685,6 +5727,7 @@ namespace AhoChatA
             foreach (var p in peers.Values)
             {
                 if (now - p.LastSeen >= PeerTimeoutMs) continue;
+                if (p.ViaRelay) continue; // 中继那边的设备只是通信渠道，不纳入本地发现
                 if (IsPainterPeer(p)) continue;
                 list.Add(new Dictionary<string, string>
                 {
@@ -6122,7 +6165,13 @@ namespace AhoChatA
                     }
                     else
                     {
-                        if (BroadcastFrame(item.Payload, item.Body, item.Conv) <= 0)
+                        // mesh 频道：只投给完成 hello↔probe↔hello 双向确认的局域网设备，
+                        // 且永不交给静态中转站。WLAN Direct 设备同样走这条 LAN 路径。
+                        bool meshLocal = IsMeshConv(conv);
+                        Func<Peer, bool> filter = meshLocal
+                            ? new Func<Peer, bool>(p => LanPeerGate.IsConfirmed(p.Id))
+                            : null;
+                        if (BroadcastFrame(item.Payload, item.Body, item.Conv, meshLocal, filter) <= 0)
                         {
                             // 还没有已知对端：立刻发一次 UDP 组播探测，
                             // 让局域网里的设备马上回连，而不是干等下一轮信标（最多几秒）。
@@ -6153,6 +6202,71 @@ namespace AhoChatA
             return false;
         }
 
+        /// <summary>默认 mesh 频道：只在局域网内、且完成双向互通确认的设备间传输。</summary>
+        private static bool IsMeshConv(string conv)
+        {
+            return string.Equals(conv ?? "", Convs.Chan(ChannelRegistry.DefaultChannelName), StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        /// 中继模式：配置了静态中继站，或 qaul 已发生过中继转发。
+        /// 中继只是「多一条联网通信渠道」——本地局域网发现与聊天全部保留，
+        /// 不应因为连了中继就关掉局域网设备发现、私聊或未加入频道。
+        /// 中继那边的远端设备不纳入本地发现列表（见 IsRelayEndpointAddress），
+        /// mesh 频道也绝不经中继流转（见 IngestIncoming / SyncAcrossLinks）。
+        /// </summary>
+        private bool _relayRestrictionsApplied;
+        public bool RelayModeActive
+        {
+            get
+            {
+                try { lock (staticRelays) if (staticRelays.Count > 0) return true; } catch { }
+                try { if (qnode != null && qnode.Relayed > 0) return true; } catch { }
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// 中继已启用时只记录一次状态供界面提示，不再关闭任何本地发现能力：
+        /// 局域网组播 / 蓝牙 / WLAN Direct / mDNS 照常工作，连接中继的设备仍能
+        /// 在本地局域网正常发现彼此、正常聊天。
+        /// </summary>
+        private void ApplyRelayModeRestrictions()
+        {
+            if (_relayRestrictionsApplied || !RelayModeActive) return;
+            _relayRestrictionsApplied = true;
+            try
+            {
+                Android.Util.Log.Info("Mchat", "中继已启用：新增联网通信渠道；本地局域网发现与聊天保持不变，mesh 频道不经中继");
+            }
+            catch (Exception ex)
+            {
+                Android.Util.Log.Warn("Mchat", "记录中继状态失败: " + ex.Message);
+            }
+        }
+
+        /// <summary>
+        /// 来源地址是否为已配置的中继端点。用于把「中继那边的设备」排除在本地发现之外：
+        /// 中继站地址本身不做为可直连的局域网设备登记，避免远端设备混进附近设备列表。
+        /// </summary>
+        private bool IsRelayEndpointAddress(string address)
+        {
+            if (string.IsNullOrEmpty(address)) return false;
+            try
+            {
+                string normalized = NormalizeHost(address);
+                lock (staticRelays)
+                    foreach (var r in staticRelays)
+                    {
+                        if (r == null || string.IsNullOrEmpty(r.Host)) continue;
+                        if (string.Equals(NormalizeHost(r.Host), normalized, StringComparison.OrdinalIgnoreCase))
+                            return true;
+                    }
+            }
+            catch { }
+            return false;
+        }
+
         /// <summary>
         /// 频道实际生效的链路集合 —— **不再按频道单独配置**，统一使用 App 全局「通信渠道设置」：
         ///   qaul 是否开启、是否「局域网直连」、WLAN Direct 是否开启、蓝牙是否开启。
@@ -6163,8 +6277,17 @@ namespace AhoChatA
             var links = new List<string>();
             try
             {
-                // 频道不再限制链路：默认频道 #mesh 与用户自建频道一样，
-                // 都可以走 qaul / 局域网 / WLAN Direct / 蓝牙（含经中转站中继）。
+                // 默认 mesh 频道强制只走局域网：防止有人借中继节点向外广播不良信息。
+                // WLAN Direct 视为本机另一张网卡，仍归入局域网链路。
+                if (ch != null && string.Equals(ch.Name, ChannelRegistry.DefaultChannelName, StringComparison.OrdinalIgnoreCase))
+                {
+                    links.Add(ChanLink.Lan);
+                    // WLAN Direct 视为本机另一张网卡，同属局域网：mesh 也走 P2P 链路，
+                    // 但仍受 LanPeerGate 双向确认与「不经静态中转站」约束。
+                    if (P2pEnabled) links.Add(ChanLink.P2p);
+                    return links;
+                }
+
                 if (QaulEnabled) links.Add(ChanLink.Qaul);
                 links.Add(ChanLink.Lan);          // 自有通道常开（不再受 DualChannel 开关影响）
                 if (P2pEnabled) links.Add(ChanLink.P2p);
@@ -6193,6 +6316,9 @@ namespace AhoChatA
                 if (string.IsNullOrEmpty(conv) || !Convs.IsChan(conv)) return;
                 var ch = channels.ByConv(conv);
                 if (ch == null) return;
+
+                // mesh 频道绝不做跨链路中继（包括 qaul 公共节点、静态中转站、BLE 逐跳）。
+                if (IsMeshConv(conv)) return;
 
                 if (!mesh.CanRelay(msg))
                 {
@@ -6529,6 +6655,8 @@ namespace AhoChatA
         /// </summary>
         public void RefreshDiscoveryNow()
         {
+            // 中继只是额外联网渠道，本地局域网发现照常刷新。
+            try { ApplyRelayModeRestrictions(); } catch { }
             try { AnnounceSelfUdp(true); } catch { }
             try { mid.BeaconNow(); } catch { }
             try { if (P2pEnabled) DiscoverP2p(); } catch { }
@@ -6850,6 +6978,9 @@ namespace AhoChatA
                 };
                 p2pNodes[fromIp] = p;
                 p2p?.ApplyHello(fromIp, id, name);
+                // WLAN Direct 是本机另一张网卡：TCP 连上且收到对方 hello 即双向互通，
+                // 直接确认，使其与局域网设备一样可以参与 mesh 频道。
+                LanPeerGate.ConfirmDirect(id);
                 Emit("p2p", GetP2pStatus());
             }
             catch { }
@@ -6860,6 +6991,9 @@ namespace AhoChatA
         {
             if (string.IsNullOrWhiteSpace(text) && string.IsNullOrEmpty(url)) return null;
             conv = string.IsNullOrEmpty(conv) ? activeConv : conv;
+
+            // 中继只是额外联网渠道，局域网私聊 / 未加入频道聊天照常进行。
+            // mesh 频道仍由 EffectiveLinks 与 SyncAcrossLinks 保证不经中继。
 
             // qaul 公开信息：走 floodsub 广播，而不是本项目自己的两条渠道
             if (conv == QaulFeedConv)
@@ -7443,6 +7577,10 @@ namespace AhoChatA
                             }
                             catch { hws = ""; }
 
+                            // 中继那边的设备不纳入本地发现：来自中继端点的 hello 标记为 ViaRelay，
+                            // 三个设备列表出口会统一过滤，避免远端设备混进「附近设备」。
+                            // 本地局域网对端仍按原样登记，连中继不影响局域网发现与聊天。
+                            bool viaRelay = IsRelayEndpointAddress(fromAddress);
                             Peer exist;
                             if (hid != null && peers.TryGetValue(hid, out exist) && exist != null)
                             {
@@ -7450,6 +7588,7 @@ namespace AhoChatA
                                 if (!string.IsNullOrEmpty(fromAddress)) exist.Address = fromAddress;
                                 if (hport > 0) exist.Port = hport;
                                 if (!string.IsNullOrEmpty(hws)) exist.WebRemote = hws;
+                                exist.ViaRelay = viaRelay;
                                 exist.LastSeen = SysEnv.TickCount;
                             }
                             else if (hid != null)
@@ -7459,6 +7598,7 @@ namespace AhoChatA
                                     Id = hid, Name = hname, Address = fromAddress,
                                     Port = hport > 0 ? hport : DefaultTcpPort,
                                     WebRemote = hws,
+                                    ViaRelay = viaRelay,
                                     LastSeen = SysEnv.TickCount
                                 };
                             }
@@ -7556,10 +7696,13 @@ namespace AhoChatA
             }
         }
 
-        private int BroadcastFrame(string headerJson, byte[] body, string conv = null)
+        private int BroadcastFrame(string headerJson, byte[] body, string conv = null,
+                                   bool skipRelay = false, Func<Peer, bool> peerFilter = null)
         {
             var now = SysEnv.TickCount;
-            var targets = peers.Values.Where(p => now - p.LastSeen < PeerTimeoutMs).ToList();
+            var targets = peers.Values
+                .Where(p => now - p.LastSeen < PeerTimeoutMs && !p.ViaRelay && (peerFilter == null || peerFilter(p)))
+                .ToList();
             int okCount = 0;
             foreach (var peer in targets)
             {
@@ -7571,8 +7714,10 @@ namespace AhoChatA
             }
 
             // 静态中转站：跨公网/跨网段时把同一帧也交给它，由它再中继给其它设备。
-            // （局域网组播到不了的场景，就靠这一条把消息送出去。）
-            okCount += SendToStaticRelays(headerJson, body, targets);
+            // mesh 频道必须留在局域网内：这里按会话再判一次，任何调用方都别想
+            // 把 mesh 帧交给中继站 —— 中继只是通信渠道，不承载 mesh 频道流转。
+            bool meshLocal = IsMeshConv(conv);
+            if (!skipRelay && !meshLocal) okCount += SendToStaticRelays(headerJson, body, targets);
             return okCount;
         }
 
@@ -8710,6 +8855,23 @@ namespace AhoChatA
                     }
                 }
 
+                // 局域网双向互通确认：收到 hello 就回一帧 probe；对方回 hello 才算 LAN peer。
+                // 这是 mesh 频道准入的前置条件，不影响其它频道的设备发现。
+                if (obj.TryGetValue("t", out var tvh) && tvh?.ToString() == "hello")
+                {
+                    LanPeerGate.OnHello(id, remote.Address, addr =>
+                    {
+                        if (!scanEnabled || discoverySocket == null) return;
+                        var probe = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(new
+                        {
+                            t = "probe",
+                            id = peerId,
+                            name = displayName
+                        }));
+                        discoverySocket.Send(probe, probe.Length, new IPEndPoint(addr, DiscoveryPort));
+                    });
+                }
+
                 bool isNew = !peers.ContainsKey(id);
                 peers[id] = new Peer
                 {
@@ -8803,7 +8965,7 @@ namespace AhoChatA
         {
             var now = SysEnv.TickCount;
             return peers.Values
-                .Where(p => now - p.LastSeen < PeerTimeoutMs)
+                .Where(p => now - p.LastSeen < PeerTimeoutMs && !p.ViaRelay)
                 .Select(p => new { id = p.Id, name = p.Name, ip = FormatIpOnly(p.Address), port = p.Port, qp = p.QaulPort, rd = p.RemotePort })
                 .ToList();
         }
@@ -9046,6 +9208,7 @@ namespace AhoChatA
             foreach (var p in peers.Values)
             {
                 if (now - p.LastSeen >= PeerTimeoutMs) continue;
+                if (p.ViaRelay) continue; // 中继那边的设备只是通信渠道，不纳入本地发现
                 if (IsPainterPeer(p)) continue; // 画板有独立入口，不混入附近设备列表
                 list.Add(new
                 {
@@ -9938,6 +10101,9 @@ namespace AhoChatA
             discoverySocket = null;
             multicastLock = null;
             peers.Clear();
+            // 需求：加入的所有频道退出程序即不保存；双向确认状态也一并清掉
+            try { channels?.ClearForExit(); } catch { }
+            try { LanPeerGate.Clear(); } catch { }
 
             // 关键：清掉静态引用。否则 App 退出后 Current 仍指向一个**已停止**的桥，
             // 后台来短信时 SmsForwarder 会以为桥可用，把消息发进一个死掉的传输层（静默丢失）。
@@ -10001,6 +10167,11 @@ namespace AhoChatA
             public int LastSeen;
             /// <summary>该节点是通过 WLAN Direct（P2P）连上的，不是局域网组播发现的。</summary>
             public bool IsP2p;
+            /// <summary>
+            /// 该节点来自中继链路（中继那边的设备）。它只是通信对端，
+            /// 不是本地局域网可直连设备，发现列表里一律不显示。
+            /// </summary>
+            public bool ViaRelay;
         }
 
         /// <summary>静态中转站端点：IPv4 / IPv6 / 域名 + 自定义端口。</summary>

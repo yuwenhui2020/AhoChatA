@@ -161,6 +161,36 @@ namespace AhoChatA
             }
         }
 
+        /// <summary>
+        /// 网页端「分享到聊天频道」入口：已由前端选好会话，这里不再弹原生选择器。
+        /// 复用同一条媒体分享传输链路，保持接收端卡片与原生分享完全一致。
+        /// </summary>
+        public static bool ShareToChannel(Context ctx, string conv, string displayName, string filePath)
+        {
+            try
+            {
+                if (ctx == null || string.IsNullOrEmpty(conv) || string.IsNullOrEmpty(filePath) || !File.Exists(filePath))
+                    return false;
+                var bridge = MchatBridge.Current ?? CoreHost.Bridge;
+                if (bridge == null) return false;
+
+                string name = string.IsNullOrEmpty(displayName) ? Path.GetFileName(filePath) : displayName;
+                // 必须保留扩展名，接收端按扩展名决定落到 阅读/音乐/图片/视频 哪个目录。
+                if (MediaShare.Classify(name) == null)
+                {
+                    var ext = Path.GetExtension(filePath);
+                    if (!string.IsNullOrEmpty(ext) && !name.EndsWith(ext, StringComparison.OrdinalIgnoreCase)) name += ext;
+                }
+                string mlibKind = Classify(name);
+                return bridge.SendMediaShareBytes(conv, name, File.ReadAllBytes(filePath), mlibKind);
+            }
+            catch (Exception ex)
+            {
+                Android.Util.Log.Warn("MediaShare", "网页分享到频道失败: " + ex.Message);
+                return false;
+            }
+        }
+
         /* ===================== 接收：点击卡片导入本机 ===================== */
 
         /// <summary>

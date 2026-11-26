@@ -830,13 +830,15 @@ namespace AhoChatA.Music
                 try { Directory.CreateDirectory(dir); } catch { }
                 string baseName = string.IsNullOrWhiteSpace(name) ? s.FileName : MakeFileName(name, "");
                 if (string.IsNullOrWhiteSpace(baseName)) baseName = "online_" + MusicLibrary.Hash(s.Id ?? DateTime.Now.Ticks.ToString());
-                string dest = IoPath.Combine(dir, baseName + ".mp3");
-                int n = 1;
-                while (File.Exists(dest))
-                    dest = IoPath.Combine(dir, baseName + "_" + (++n) + ".mp3");
-
                 var data = await HttpGetBytes(url);
                 if (data == null || data.Length < 1024) return null;
+                // 以文件头判定真实格式：无损音源返回 flac 时不能再存成 .mp3，
+                // 否则播放器与媒体库会按错误编码解析。
+                string audioExt = AudioExt(data) ?? ".mp3";
+                string dest = IoPath.Combine(dir, baseName + audioExt);
+                int n = 1;
+                while (File.Exists(dest))
+                    dest = IoPath.Combine(dir, baseName + "_" + (++n) + audioExt);
                 File.WriteAllBytes(dest, data);
 
                 // 封面 / 歌词：直接复用 App 播放时获取封面与歌词的那套逻辑（FetchCoverAsync / FetchLyricsAsync），
@@ -941,6 +943,20 @@ namespace AhoChatA.Music
                 File.WriteAllText(destLrc, lrc, new UTF8Encoding(false));
             }
             catch { }
+        }
+
+        /// <summary>按文件头猜音频扩展名；猜不出时调用方回退 .mp3。</summary>
+        private static string AudioExt(byte[] b)
+        {
+            if (b == null || b.Length < 12) return null;
+            if (b[0] == 'f' && b[1] == 'L' && b[2] == 'a' && b[3] == 'C') return ".flac";
+            if (b[0] == 'O' && b[1] == 'g' && b[2] == 'g' && b[3] == 'S') return ".ogg";
+            if (b[0] == 'R' && b[1] == 'I' && b[2] == 'F' && b[3] == 'F'
+                && b[8] == 'W' && b[9] == 'A' && b[10] == 'V' && b[11] == 'E') return ".wav";
+            if (b[4] == 'f' && b[5] == 't' && b[6] == 'y' && b[7] == 'p') return ".m4a";
+            if (b[0] == 'I' && b[1] == 'D' && b[2] == '3') return ".mp3";
+            if (b[0] == 0xFF && (b[1] == 0xFB || b[1] == 0xF3 || b[1] == 0xF2 || b[1] == 0xF1 || b[1] == 0xF9)) return ".mp3";
+            return null;
         }
 
         /// <summary>根据文件头判断图片扩展名（jpg/png/webp/gif）。</summary>

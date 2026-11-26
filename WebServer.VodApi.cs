@@ -78,6 +78,25 @@ namespace AhoChatA
             }
         }
 
+        private static string TrimLen(string s, int max)
+        {
+            var v = (s ?? "").Trim();
+            return v.Length <= max ? v : v.Substring(0, max);
+        }
+
+        /// <summary>
+        /// 判断一个 URL 本身是否 m3u8 清单：只看 ?/# 之前的路径，
+        /// 避免查询串里出现 .m3u8 字样就把普通分片误判成清单。
+        /// </summary>
+        private static bool IsM3u8Url(string url)
+        {
+            if (string.IsNullOrEmpty(url)) return false;
+            var s = url;
+            int q = s.IndexOfAny(new[] { '?', '#' });
+            if (q >= 0) s = s.Substring(0, q);
+            return s.EndsWith(".m3u8", StringComparison.OrdinalIgnoreCase);
+        }
+
         /// <summary>网页端在线影视「分享」请求体（字段与 VideoShare.BuildOnline 对齐）。</summary>
         private sealed class VodShareReq
         {
@@ -154,6 +173,11 @@ namespace AhoChatA
                     string title = GetQuery(req.Url.Query, "title") ?? "";
                     if (string.IsNullOrEmpty(url))
                     { WriteJson(res, Json(new { ok = false, error = L10n.T("缺少视频 m3u8 地址") })); return; }
+                    var dup = AhoChatA.Vod.DownloadCenter.List().FirstOrDefault(x =>
+                        (x.Status == "queued" || x.Status == "downloading" || x.Status == "merging")
+                        && string.Equals(x.Url, url, StringComparison.OrdinalIgnoreCase));
+                    if (dup != null)
+                    { WriteJson(res, Json(new { ok = true, duplicate = true, id = dup.Id, status = dup.Status })); return; }
                     var t = AhoChatA.Vod.DownloadCenter.QueueVideo(url, title);
                     WriteJson(res, Json(new { ok = true, id = t.Id, status = t.Status }));
                     return;
@@ -171,6 +195,14 @@ namespace AhoChatA
                     var s = new AhoChatA.Music.OnlineSong { Plat = plat, Id = id, Title = name, Artist = artist };
                     if (!string.IsNullOrEmpty(cover)) s.Cover = cover;
                     if (int.TryParse(dur, out int dms)) s.DurationMs = dms;
+                    var dup = AhoChatA.Vod.DownloadCenter.List().FirstOrDefault(x =>
+                        x.Type == "music"
+                        && (x.Status == "queued" || x.Status == "downloading" || x.Status == "merging")
+                        && x.MusicSong != null
+                        && string.Equals(x.MusicSong.Id, id, StringComparison.OrdinalIgnoreCase)
+                        && string.Equals(x.MusicSong.Plat, plat, StringComparison.OrdinalIgnoreCase));
+                    if (dup != null)
+                    { WriteJson(res, Json(new { ok = true, duplicate = true, id = dup.Id, status = dup.Status })); return; }
                     var t = AhoChatA.Vod.DownloadCenter.QueueMusic(s, "standard", name);
                     WriteJson(res, Json(new { ok = true, id = t.Id, status = t.Status }));
                     return;
@@ -221,7 +253,7 @@ namespace AhoChatA
             h.Append(L10n.T("<header><h1>下载中心</h1><div class=sub>离线保存音乐 / 视频 / 小说 · 失败可重试 · 完成后提示保存位置</div></header>"));
             h.Append(L10n.T("<div class=list id=list><div class=meta>加载中…</div></div>"));
             h.Append("<script>");
-            h.Append("function esc(s){return (s||'').replace(/[&<>]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c]});}");
+            h.Append("function esc(s){return String(s||'').replace(/[&<>\"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}[c]});}");
             h.Append(L10n.T("function st(s){return {queued:'排队中',downloading:'下载中',merging:'合并中',done:'完成',failed:'失败',canceled:'已取消'}[s]||s;}"));
             h.Append(L10n.T("function tp(s){return {video:'视频',music:'音乐',novel:'小说'}[s]||s;}"));
             h.Append("function refresh(){fetch('/api/media/vod/download?op=list').then(function(r){return r.json();}).then(function(d){");
@@ -390,6 +422,13 @@ namespace AhoChatA
                     }
                     if (!post) { WriteJson(res, "{\"ok\":false,\"error\":\"POST required\"}"); return; }
                     var q = JsonConvert.DeserializeObject<VodShareReq>(ReadVodBody(req)) ?? new VodShareReq();
+                    // 网页 POST 的字段会进入聊天卡片，先做长度与空值归一，避免异常长文本刷屏
+                    q.title = TrimLen(q.title, 300);
+                    q.url = TrimLen(q.url, 2000);
+                    q.poster = TrimLen(q.poster, 2000);
+                    q.watchUrl = TrimLen(q.watchUrl, 2000);
+                    q.vkey = TrimLen(q.vkey, 300);
+                    q.episodeName = TrimLen(q.episodeName, 200);
                     var fields = VideoShare.BuildOnline(q.title, q.url, q.poster, q.watchUrl,
                         q.vkey, q.episodeName, q.episodeIndex, q.duration);
                     var bridge = MchatBridge.Current ?? CoreHost.Bridge;
@@ -653,7 +692,7 @@ namespace AhoChatA
             {
                 // m3u8 清单必须走 RewriteM3u8 把分片改写成宿主机代理，
                 // 直接吐 App 端缓存里的原始清单会让浏览器绕过代理直连 CDN
-                if (target.ToLowerInvariant().Contains(".m3u8")) return false;
+                if (IsM3u8Url(target)) return false;
 
                 string key = VodSegKey(target);
                 string data = System.IO.Path.Combine(VodConfig.DiskCacheRoot(), key + ".data");
@@ -765,7 +804,7 @@ namespace AhoChatA
 
             // 当前分片到达时，顺手把清单里后续 2 片后台拉进宿主机缓存
             if (!warm && !string.Equals(req.HttpMethod, "HEAD", StringComparison.OrdinalIgnoreCase)
-                && !target.ToLowerInvariant().Contains(".m3u8"))
+                && !IsM3u8Url(target))
             {
                 string[] nx;
                 if (_segNext.TryGetValue(target, out nx))
@@ -776,7 +815,7 @@ namespace AhoChatA
             // 命中即完全不向 CDN 发包 —— Web 端一起看复用宿主机缓存数据就靠这两级。
             bool head = string.Equals(req.HttpMethod, "HEAD", StringComparison.OrdinalIgnoreCase);
             bool segCacheable = !warm && !head && string.IsNullOrEmpty(req.Headers["Range"])
-                && !target.ToLowerInvariant().Contains(".m3u8");
+                && !IsM3u8Url(target);
             if (!warm && !head)
             {
                 if (segCacheable)
@@ -817,7 +856,7 @@ namespace AhoChatA
             try
             {
                 // m3u8 永远整份拉取再改写；二进制媒体在预热时只拉 0-0 预热握手，正式播放才走 Range。
-                bool isM3u8 = target.ToLowerInvariant().Contains(".m3u8");
+                bool isM3u8 = IsM3u8Url(target);
                 string rangeArg = isM3u8 ? null : (warm ? "bytes=0-0" : req.Headers["Range"]);
                 up = VodApi.Open(target, referer, rangeArg, 15000);
                 var ct = up.ContentType ?? "application/octet-stream";
@@ -954,7 +993,7 @@ namespace AhoChatA
                 try
                 {
                     var t = System.Uri.UnescapeDataString(raw);
-                    if (!string.IsNullOrWhiteSpace(t) && !t.ToLowerInvariant().Contains(".m3u8")) res.Add(t);
+                    if (!string.IsNullOrWhiteSpace(t) && !IsM3u8Url(t)) res.Add(t);
                 }
                 catch { }
             }
