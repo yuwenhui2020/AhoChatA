@@ -23,6 +23,11 @@ namespace AhoChatA
     public static class CoreHost
     {
         private static readonly object gate = new object();
+        // Bridge 构造实测约 660ms，放在 Application.onCreate 会直接卡住首帧。
+        // 改为后台预建；界面/服务只在确实还没建好时短暂等待，最长 1.5s。
+        private static readonly System.Threading.ManualResetEventSlim PreinitDone =
+            new System.Threading.ManualResetEventSlim(false);
+        private static volatile bool _preinitStarted;
         private static readonly object webStartGate = new object();
         private static int _bgStarted;
         private static volatile WebServer _web;
@@ -45,14 +50,31 @@ namespace AhoChatA
         public static void Preinit(global::Android.Content.Context ctx)
         {
             if (ctx == null) return;
-            lock (gate)
+            try
             {
-                if (Bridge != null) return;
-                Perf.Mark("Preinit：新建 Bridge（进程启动期）");
-                Bridge = CreateBridge(ctx);
-                HookBridgeEvents(Bridge, ctx);
-                Perf.Mark("Preinit：Bridge 就绪");
+                lock (gate)
+                {
+                    if (Bridge != null) return;
+                    Perf.Mark("Preinit：新建 Bridge（后台线程）");
+                    Bridge = CreateBridge(ctx);
+                    HookBridgeEvents(Bridge, ctx);
+                    Perf.Mark("Preinit：Bridge 就绪");
+                }
             }
+            finally { PreinitDone.Set(); }
+        }
+
+        /// <summary>在后台线程预建 Bridge，Application.onCreate 不再阻塞主线程。</summary>
+        public static void PreinitAsync(global::Android.Content.Context ctx)
+        {
+            if (ctx == null) return;
+            _preinitStarted = true;
+            System.Threading.Tasks.Task.Run(() => Preinit(ctx));
+        }
+
+        private static void AwaitPreinit()
+        {
+            if (Bridge == null && _preinitStarted) PreinitDone.Wait(1500);
         }
 
         /// <summary>
@@ -71,6 +93,7 @@ namespace AhoChatA
         public static void Ensure(Activity activity)
         {
             if (activity == null) return;
+            AwaitPreinit();
             lock (gate)
             {
                 if (Bridge != null)
@@ -128,6 +151,7 @@ namespace AhoChatA
         public static void EnsureBackground(Context ctx)
         {
             if (ctx == null) return;
+            AwaitPreinit();
             lock (gate)
             {
                 if (Bridge == null)

@@ -100,6 +100,15 @@ namespace AhoChatA
         // 由它再分发给其它设备。持久化到 SharedPreferences，重启后自动重连。
         private readonly List<RelayEndpoint> staticRelays = new List<RelayEndpoint>();
         private const string PrefStaticRelays = "staticRelays";
+
+        // 真机实测：无互联网时 Dns.GetHostEntry 可能阻塞 20~40 秒，
+        // 若在 UI 线程触发就是一次 ANR。统一走后台线程 + 硬超时 + 短缓存。
+        private static readonly ConcurrentDictionary<string, Tuple<int, IPAddress[]>> DnsResults
+            = new ConcurrentDictionary<string, Tuple<int, IPAddress[]>>();
+        private static readonly SemaphoreSlim DnsSlots = new SemaphoreSlim(4);
+        private const int DnsDefaultTimeoutMs = 2500;
+        private const int DnsOkCacheMs = 60000;
+        private const int DnsFailCacheMs = 5000;
         private const string PrefTcpPort = "tcpPortPref";   // 用户指定的本机监听端口（0=自动）
         
         /// <summary>安全执行委托，捕获异常并记录日志，避免空 catch 块吞掉错误。</summary>
@@ -699,6 +708,62 @@ namespace AhoChatA
             return IPAddress.TryParse(h, out ip);
         }
 
+        /// <summary>
+        /// 有界域名解析：后台线程执行，调用方最多等 timeoutMs；结果短缓存，失败也缓存，
+        /// 避免断网时每个出站包都重复吃一次几十秒的 DNS 超时。
+        /// </summary>
+        public static IPAddress[] ResolveHostBounded(string host, int timeoutMs = DnsDefaultTimeoutMs)
+        {
+            if (string.IsNullOrWhiteSpace(host)) throw new ArgumentException("host");
+            IPAddress literal;
+            if (IPAddress.TryParse(host, out literal)) return new[] { literal };
+
+            var key = NormalizeHost(host.Trim()).ToLowerInvariant();
+            int now = SysEnv.TickCount;
+            Tuple<int, IPAddress[]> cached;
+            if (DnsResults.TryGetValue(key, out cached) && cached.Item2 != null)
+            {
+                int age = unchecked(now - cached.Item1);
+                int ttl = cached.Item2.Length == 0 ? DnsFailCacheMs : DnsOkCacheMs;
+                if (age >= 0 && age < ttl) return cached.Item2;
+            }
+
+            var task = Task.Run(() =>
+            {
+                DnsSlots.Wait();
+                try { return System.Net.Dns.GetHostEntry(key).AddressList; }
+                finally { DnsSlots.Release(); }
+            });
+
+            IPAddress[] addrs;
+            try
+            {
+                if (!task.Wait(timeoutMs))
+                {
+                    DnsResults[key] = Tuple.Create(SysEnv.TickCount, new IPAddress[0]);
+                    throw new TimeoutException("域名解析超时: " + host);
+                }
+                addrs = task.Result;
+            }
+            catch (AggregateException ex)
+            {
+                DnsResults[key] = Tuple.Create(SysEnv.TickCount, new IPAddress[0]);
+                throw ex.InnerException ?? ex;
+            }
+            catch
+            {
+                DnsResults[key] = Tuple.Create(SysEnv.TickCount, new IPAddress[0]);
+                throw;
+            }
+            if (addrs == null || addrs.Length == 0)
+            {
+                DnsResults[key] = Tuple.Create(SysEnv.TickCount, new IPAddress[0]);
+                return new IPAddress[0];
+            }
+            DnsResults[key] = Tuple.Create(SysEnv.TickCount, addrs);
+            return addrs;
+        }
+
         /// <summary>按地址族建立 TCP 连接（IPv4 / IPv6 都支持；域名会同时尝试 A/AAAA）。</summary>
         private static TcpClient ConnectTcp(string host, int port, int timeoutMs)
         {
@@ -719,8 +784,8 @@ namespace AhoChatA
             }
 
             // 域名：解析出 A/AAAA 后逐个尝试（IPv6 优先，回退 IPv4）。
-            // Xamarin/Mono 的 System.Net.Dns 不提供 GetHostAddresses，用 GetHostEntry 取地址表。
-            var addrs = System.Net.Dns.GetHostEntry(NormalizeHost(host)).AddressList;
+            // 绝不能在主线程裸调 Dns.GetHostEntry：断网时它会卡 20~40 秒直接触发 ANR。
+            var addrs = ResolveHostBounded(host, Math.Min(timeoutMs, DnsDefaultTimeoutMs));
             Exception last = null;
             foreach (var a in addrs)
             {
@@ -6800,7 +6865,7 @@ namespace AhoChatA
             // 局域网：排除 P2P 对端（按 id），避免同一台设备被同时算进 WLAN Direct 和局域网。
             try
             {
-                long now = SysEnv.TickCount;
+                int now = SysEnv.TickCount;
                 foreach (var p in peers.Values)
                 {
                     if (now - p.LastSeen >= PeerTimeoutMs) continue;
@@ -6849,7 +6914,7 @@ namespace AhoChatA
             var btMap = BitchatIdMap();
             try
             {
-                long now = SysEnv.TickCount;
+                int now = SysEnv.TickCount;
                 foreach (var p in peers.Values)
                 {
                     if (now - p.LastSeen >= PeerTimeoutMs) continue;

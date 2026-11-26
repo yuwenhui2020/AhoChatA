@@ -31,8 +31,9 @@ namespace AhoChatA
             Perf.Mark("Application.OnCreate");
             try
             {
-                // 只预建 Bridge：聊天列表、身份、会话仓库都要它，但不起任何服务
-                CoreHost.Preinit(this);
+                // 只预建 Bridge：聊天列表、身份、会话仓库都要它，但不起任何服务。
+                // 实测构造约 660ms，必须放后台，否则 Application.onCreate 会成为首帧卡顿源。
+                CoreHost.PreinitAsync(this);
                 // 设置下载中心上下文，用于通知栏进度显示
                 AhoChatA.Vod.DownloadCenter.AppContext = this;
             }

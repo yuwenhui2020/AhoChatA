@@ -57,6 +57,15 @@ namespace AhoChatA
         // 设备页的自动刷新（见 StartDeviceWatch）
         private Handler _devTick;
         private string _devicesSig = "";
+        // 四个 Tab 页按需构建：切页不再无条件 RemoveAllViews + 重建整页视图，
+        // 这是真机上切页慢帧与视图数持续上涨的主因。数据变化由各自的刷新入口打脏标记。
+        private bool _messagesBuilt, _devicesBuilt, _servicesBuilt, _meBuilt;
+        private string _servicesSig = "", _meSig = "";
+        // 顶栏「在线数 / 接入方式」每次切页都要，底层会枚举网卡与所有链路；
+        // 0.8 秒短缓存即可，既跟得上设备上下线，又不会把切页拖成慢帧。
+        private long _headerCacheAt;
+        private int _headerOnline;
+        private string _headerAccess;
         // 画板设备（inkcanvas/painter）发现：UDP 21118，与「附近设备」并列展示
         private DrawboardDiscovery _drawDisc;
         private long _drawLastScan;
@@ -329,6 +338,21 @@ namespace AhoChatA
             try { PrivacyActivity.ApplySecureFlag(this); } catch { }
             pendingOpenConv = Intent?.GetStringExtra("openConv");
             ShowTab(0);
+            // 首帧之后再预热其余三个 Tab（仍走 UI 线程，但避开用户点击的那 16ms）。
+            try
+            {
+                bottomNav?.PostDelayed(new Java.Lang.Runnable(() =>
+                {
+                    try
+                    {
+                        if (!_devicesBuilt) { BuildDevicesTab(); _devicesBuilt = true; }
+                        if (!_servicesBuilt) { BuildServicesTab(); _servicesBuilt = true; _servicesSig = SafeIp() + "|" + WebServer.ExternalPortActual; }
+                        if (!_meBuilt) { BuildMeTab(); _meBuilt = true; _meSig = (bridge?.SelfName ?? "") + "|" + SafeIp(); }
+                    }
+                    catch { }
+                }), 1500);
+            }
+            catch { }
             if (!string.IsNullOrEmpty(pendingOpenConv)) OpenChatConv(pendingOpenConv);
             Perf.Mark("OnCreate 收尾");
         }
@@ -354,15 +378,35 @@ namespace AhoChatA
 
             switch (tab)
             {
-                case 0: StopDeviceWatch(); StopMeIpWatch(); RefreshConversations(); break;
+                case 0:
+                    StopDeviceWatch(); StopMeIpWatch();
+                    // 会话列表由 ConversationsChanged 主动打脏，切回时通常无需重建
+                    if (!_messagesBuilt) { RefreshConversations(); _messagesBuilt = true; }
+                    break;
                 case 1:
-                    // 进「设备」页立刻补一帧发现广播：不用等下一个周期，列表马上就是最新的
-                    try { bridge?.RefreshDiscoveryNow(); } catch { }
-                    // 画板设备：立刻广播一次 PING 并在 watch 周期里持续扫描
-                    try { _drawDisc?.ScanNow(); _drawLastScan = Java.Lang.JavaSystem.CurrentTimeMillis(); } catch { }
-                    StopMeIpWatch(); BuildDevicesTab(); StartDeviceWatch(); break;
-                case 2: StopDeviceWatch(); StopMeIpWatch(); BuildServicesTab(); break;
-                case 3: StopDeviceWatch(); BuildMeTab(); break;
+                    // 发现广播 / 画板 PING 都是网络 I/O，挪到后台线程；
+                    // 设备列表本身由 2.5s 的 watch 按签名增量刷新，不在 UI 线程同步扫。
+                    System.Threading.Tasks.Task.Run(() =>
+                    {
+                        try { bridge?.RefreshDiscoveryNow(); } catch { }
+                        try { _drawDisc?.ScanNow(); _drawLastScan = Java.Lang.JavaSystem.CurrentTimeMillis(); } catch { }
+                    });
+                    StopMeIpWatch();
+                    if (!_devicesBuilt) { BuildDevicesTab(); _devicesBuilt = true; }
+                    StartDeviceWatch();
+                    break;
+                case 2:
+                    StopDeviceWatch(); StopMeIpWatch();
+                    string sigS = SafeIp() + "|" + WebServer.ExternalPortActual;
+                    if (!_servicesBuilt || sigS != _servicesSig)
+                    { BuildServicesTab(); _servicesBuilt = true; _servicesSig = sigS; }
+                    break;
+                case 3:
+                    StopDeviceWatch();
+                    string sigM = (bridge?.SelfName ?? "") + "|" + SafeIp();
+                    if (!_meBuilt || sigM != _meSig)
+                    { BuildMeTab(); _meBuilt = true; _meSig = sigM; }
+                    break;
             }
             UpdateHeader();
             ReapplyTheme();   // 切 tab 会重建内容，补一次主题重刷（夜间）
@@ -763,6 +807,9 @@ namespace AhoChatA
             // 回到前台：退出省电降频（发现/信标立刻恢复常频并补发一帧）
             try { bridge.SetAppForeground(true); } catch { }
             RefreshConversations();
+            _messagesBuilt = true;
+            // 从设置页返回后，渠道/昵称/服务地址可能变了：下一切页重建对应页面
+            _devicesBuilt = false; _servicesBuilt = false; _meBuilt = false;
             UpdateHeader();
 
             // 用户可能在系统设置里刚给了短信权限：回到前台再尝试挂上收件箱监听
@@ -1602,24 +1649,39 @@ namespace AhoChatA
         }
 
         /// <summary>顶栏「接入方式」摘要，异常时降级为「无」。</summary>
+        private static string SafeIp()
+        {
+            try { return DeviceStatus.Ip ?? ""; } catch { return ""; }
+        }
+
+        private void EnsureHeaderStats()
+        {
+            long now = Java.Lang.JavaSystem.CurrentTimeMillis();
+            if (_headerCacheAt != 0 && now - _headerCacheAt < 800) return;
+            _headerCacheAt = now;
+            try { _headerOnline = bridge.GetOnlineCount(); }
+            catch { try { _headerOnline = bridge.OnlinePeers().Count; } catch { _headerOnline = 0; } }
+            try { _headerAccess = bridge.GetAccessSummary(); }
+            catch { _headerAccess = L10n.T("无"); }
+        }
+
         private string SafeAccessSummary()
         {
-            try { return bridge.GetAccessSummary(); } catch { return L10n.T("无"); }
+            EnsureHeaderStats();
+            return _headerAccess ?? L10n.T("无");
         }
 
         /// <summary>顶栏「在线」数（按设备 id 去重合并各渠道），异常时退化用局域网在线数。</summary>
         private int SafeOnline()
         {
-            try { return bridge.GetOnlineCount(); }
-            catch { try { return bridge.OnlinePeers().Count; } catch { return 0; } }
+            EnsureHeaderStats();
+            return _headerOnline;
         }
 
         private void UpdateHeader()
         {
             try
             {
-                var peers = bridge.OnlinePeers();
-
                 // 底部 Tab 页：标题就是页面名，副标题给一句人话摘要
                 if (!inChat)
                 {
@@ -1628,7 +1690,7 @@ namespace AhoChatA
                     {
                         case 1:
                             t = L10n.T("附近设备");
-                            s = peers.Count + L10n.T(" 台在线 · 同一网络自动发现，可直接聊天或通话");
+                            s = SafeOnline() + L10n.T(" 台在线 · 同一网络自动发现，可直接聊天或通话");
                             break;
                         case 2:
                             t = L10n.T("共享与服务");

@@ -65,7 +65,15 @@ namespace AhoChatA
 
             // 被系统重启（START_STICKY）或开机自启拉起时，把后台聊天栈也恢复起来，
             // 以便不打开界面也能继续收消息。幂等：正常启动时已在跑则直接返回。
-            try { CoreHost.Preinit(this); CoreHost.EnsureBackground(this); } catch { }
+            // 这里必须在子线程做：Service.onCreate 超时只有 5 秒，
+            // Bridge 构造要读 SharedPreferences、生成/加载三把身份密钥，
+            // 放在主线程会让「前台服务启动」成为一次 ANR 的触发点（真机已复现）。
+            CoreHost.PreinitAsync(this);
+            System.Threading.Tasks.Task.Run(() =>
+            {
+                try { CoreHost.EnsureBackground(this); }
+                catch (Exception ex) { Android.Util.Log.Warn("Mchat", "前台服务后台初始化失败: " + ex.Message); }
+            });
         }
 
         public override StartCommandResult OnStartCommand(Intent intent, StartCommandFlags flags, int startId)

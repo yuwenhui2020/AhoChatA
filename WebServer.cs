@@ -3179,7 +3179,9 @@ namespace AhoChatA
                 return IsPrivateAddress(ip);
             try
             {
-                foreach (var addr in System.Net.Dns.GetHostAddresses(host))
+                // 断网时域名解析可阻塞几十秒；这里最多等 1.2 秒，超时按「不可信」拒绝，
+                // 既避免网页代理请求把 HTTP 工作线程全部堵死，也不放松 SSRF 边界。
+                foreach (var addr in MchatBridge.ResolveHostBounded(host, 1200))
                     if (IsPrivateAddress(addr)) return true;
             }
             catch { return true; }
