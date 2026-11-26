@@ -522,6 +522,10 @@ namespace AhoChatA
         {
             inChat = false;
             HideKeyboard();
+            // 聊天期间 OnConversationsChanged 有意跳过列表刷新（避免每收一条消息
+            // 都重建会话行），而 _messagesBuilt 仍为 true，ShowTab(0) 也就不再刷。
+            // 于是发出去的消息在列表里仍旧显示「还没有消息」——返回时补刷一次。
+            try { RefreshConversations(); } catch { }
             ShowTab(currentTab);
         }
 
@@ -5499,8 +5503,9 @@ namespace AhoChatA
                     if (string.IsNullOrEmpty(conv)) return;
                     currentConv = conv;
                     RefreshConversations();
-                    RefreshMessages(true);
-                    UpdateHeader();
+                    // 没有消息的私聊会被 GetConversations() 过滤掉，若只设 activeConv
+                    // 而不进聊天页，用户就再也找不到它、发不出第一条消息。
+                    OpenChatConv(conv);
                 })
                 .Show();
         }
