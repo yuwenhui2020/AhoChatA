@@ -46,12 +46,20 @@ namespace AhoChatA.Vod
         public long TotalBytes = -1;
         public string DownloadInfo = "";
         public string BookId = "";
+        // 「解析」页提交的小说按章下载：章节表与书源上下文随任务走，失败可重试
+        public List<Chapter> NovelChapters = null;
+        public string NovelChaptersJson = "";
+        public string NovelSourceKey = "";
+        public string NovelSourceName = "";
+        public bool PerChapterFiles = true;
     }
 
     public static partial class DownloadCenter
     {
         private static readonly object _lock = new object();
         private static readonly Dictionary<string, DownloadTask> _tasks = new Dictionary<string, DownloadTask>();
+        // 小说按章下载的可取消上下文（HTTP 下载已有自己的 HttpContexts）
+        private static readonly Dictionary<string, CancellationTokenSource> _novelCancel = new Dictionary<string, CancellationTokenSource>();
         private static int _seq = 0;
 
         /// <summary>应用上下文（用于通知、媒体扫描等）。由 DownloaderService/Activity 初始化时设置。</summary>
@@ -101,6 +109,54 @@ namespace AhoChatA.Vod
             t.DirHint = L10n.T("合并后的 txt 将保存到: ") + NovelDir();
             lock (_lock) _tasks[t.Id] = t;
             Task.Run(() => RunNovel(t.Id));
+            return t;
+        }
+
+        /// <summary>
+        /// 「解析」页专用：只下载用户勾选的章节。每章单独落一个 txt，同时生成合并 txt。
+        /// 参考 uncle-novel-main：任务带章节快照 / 重试次数 / 取消能力 / 逐章进度。
+        /// </summary>
+        public static DownloadTask QueueNovelChapters(string title, string sourceUrl,
+            List<Chapter> chapters, string sourceName = "", bool perChapterFiles = true)
+        {
+            var picked = new List<Chapter>();
+            if (chapters != null)
+            {
+                foreach (var c in chapters)
+                {
+                    if (c == null || string.IsNullOrEmpty(c.Url)) continue;
+                    picked.Add(new Chapter
+                    {
+                        Index = picked.Count,
+                        Title = c.Title,
+                        Url = c.Url,
+                        IsVolume = c.IsVolume,
+                        IsVip = c.IsVip,
+                        IsPay = c.IsPay,
+                        Tag = c.Tag
+                    });
+                }
+            }
+            var t = new DownloadTask
+            {
+                Id = NewId(),
+                Type = "novel",
+                Title = string.IsNullOrWhiteSpace(title) ? L10n.T("小说") : title.Trim(),
+                Status = "queued",
+                Added = DateTime.UtcNow,
+                NovelChapters = picked,
+                NovelSourceKey = sourceUrl ?? "",
+                NovelSourceName = sourceName ?? "",
+                PerChapterFiles = perChapterFiles,
+                Url = sourceUrl ?? ""
+            };
+            t.Total = picked.Count;
+            t.DirHint = perChapterFiles
+                ? L10n.T("章节 txt 与合并 txt 将保存到: ") + NovelDir()
+                : L10n.T("合并后的 txt 将保存到: ") + NovelDir();
+            lock (_lock) _tasks[t.Id] = t;
+            SaveHistory();
+            Task.Run(async () => await RunNovelChapters(t.Id).ConfigureAwait(false));
             return t;
         }
 
@@ -166,6 +222,8 @@ namespace AhoChatA.Vod
             t.Error = ""; t.Progress = 0; t.Done = 0; t.Status = "queued";
             if (t.Type == "video") Task.Run(() => RunVideo(t.Id));
             else if (t.Type == "music") Task.Run(async () => await RunMusic(t.Id, t.MusicSong, t.Quality, t.Title));
+            else if (t.Type == "novel" && (t.NovelChapters != null || !string.IsNullOrEmpty(t.NovelChaptersJson)))
+                Task.Run(async () => await RunNovelChapters(t.Id).ConfigureAwait(false));
             else if (t.Type == "novel") Task.Run(() => RunNovel(t.Id));
             return true;
         }
@@ -174,6 +232,16 @@ namespace AhoChatA.Vod
         public static bool Cancel(string id)
         {
             if (CancelHttp(id)) return true;
+            // 小说按章下载支持中途取消：通知后台循环立刻停下
+            lock (_novelCancel)
+            {
+                CancellationTokenSource cts;
+                if (_novelCancel.TryGetValue(id ?? "", out cts))
+                {
+                    try { cts.Cancel(); } catch { }
+                    return true;
+                }
+            }
             lock (_lock)
             {
                 if (!_tasks.TryGetValue(id ?? "", out var t)) return false;
@@ -487,6 +555,147 @@ namespace AhoChatA.Vod
             catch (Exception ex) { Fail(t, ex.Message); }
         }
 
+        // ---------------- 执行：解析页按章下载（改良版内置下载器） ----------------
+
+        private static async Task RunNovelChapters(string id)
+        {
+            DownloadTask t;
+            lock (_lock) { if (!_tasks.TryGetValue(id, out t)) return; }
+
+            var chapters = t.NovelChapters;
+            if ((chapters == null || chapters.Count == 0) && !string.IsNullOrEmpty(t.NovelChaptersJson))
+            {
+                try { chapters = Newtonsoft.Json.JsonConvert.DeserializeObject<List<Chapter>>(t.NovelChaptersJson); }
+                catch { chapters = null; }
+            }
+            if (chapters == null || chapters.Count == 0)
+            {
+                Fail(t, L10n.T("下载任务缺少章节列表，请重新解析后下载"));
+                return;
+            }
+            t.NovelChapters = chapters;
+            t.Total = chapters.Count;
+            t.Done = 0;
+
+            var cts = new CancellationTokenSource();
+            lock (_novelCancel) _novelCancel[id] = cts;
+            try
+            {
+                SetStatus(t, "downloading");
+                ShowDownloadNotification(t, 0, L10n.T("正在下载章节…"));
+
+                var src = string.IsNullOrEmpty(t.NovelSourceKey)
+                    ? null : ReaderLibrary.FindSource(t.NovelSourceKey);
+                var dir = NovelDir();
+                try { Directory.CreateDirectory(dir); } catch { }
+                var bookDir = t.PerChapterFiles
+                    ? IoPath.Combine(dir, SafeName(t.Title)) : dir;
+                if (t.PerChapterFiles)
+                {
+                    try { Directory.CreateDirectory(bookDir); } catch { }
+                }
+
+                var texts = new string[chapters.Count];
+                var okFlags = new bool[chapters.Count];
+                const int chapterTimeoutMs = 25000;
+                const int retryTimes = 3;
+
+                for (int i = 0; i < chapters.Count; i++)
+                {
+                    if (cts.IsCancellationRequested) throw new System.OperationCanceledException(cts.Token);
+                    var ch = chapters[i];
+                    if (ch.IsVolume)
+                    {
+                        okFlags[i] = true;
+                        t.Done++;
+                        SetProgress(t, DonePct(t));
+                        continue;
+                    }
+
+                    t.DownloadInfo = (i + 1) + "/" + chapters.Count + " · " + ch.Title;
+                    var text = "";
+                    for (int attempt = 0; attempt <= retryTimes; attempt++)
+                    {
+                        try
+                        {
+                            var job = NovelAnalyzer.ChapterTextAsync(src, ch);
+                            var winner = await Task.WhenAny(job, Task.Delay(chapterTimeoutMs, cts.Token)).ConfigureAwait(false);
+                            if (winner != job) { if (cts.IsCancellationRequested) throw new System.OperationCanceledException(cts.Token); }
+                            else
+                            {
+                                text = await job.ConfigureAwait(false);
+                                if (!string.IsNullOrWhiteSpace(text)) break;
+                            }
+                        }
+                        catch (System.OperationCanceledException) { throw; }
+                        catch { }
+                    }
+                    texts[i] = text ?? "";
+                    okFlags[i] = !string.IsNullOrWhiteSpace(text);
+                    if (t.PerChapterFiles && okFlags[i])
+                    {
+                        var one = IoPath.Combine(bookDir, SafeName(ch.Title ?? ("第 " + (i + 1) + " 章")) + ".txt");
+                        try
+                        {
+                            File.WriteAllText(one, ch.Title + "\n\n" + texts[i],
+                                new System.Text.UTF8Encoding(false));
+                        }
+                        catch { }
+                    }
+                    t.Done++;
+                    SetProgress(t, DonePct(t));
+                    ShowDownloadNotification(t, DonePct(t),
+                        (i + 1) + "/" + chapters.Count + " · " + (ch.Title ?? ""));
+                }
+
+                SetStatus(t, "merging");
+                var merged = IoPath.Combine(dir, SafeName(t.Title) + ".txt");
+                int dup = 1;
+                while (File.Exists(merged))
+                    merged = IoPath.Combine(dir, SafeName(t.Title) + "_" + (++dup) + ".txt");
+                int failed = 0;
+                using (var sw = new StreamWriter(merged, false, new System.Text.UTF8Encoding(false)))
+                {
+                    sw.WriteLine(t.Title);
+                    if (!string.IsNullOrEmpty(t.NovelSourceName))
+                        sw.WriteLine(L10n.T("来源：") + t.NovelSourceName);
+                    sw.WriteLine();
+                    for (int i = 0; i < chapters.Count; i++)
+                    {
+                        var ch = chapters[i];
+                        sw.WriteLine(ch.Title);
+                        if (okFlags[i]) sw.WriteLine(texts[i]);
+                        else { sw.WriteLine(L10n.T("（本章下载失败，已跳过）")); failed++; }
+                        sw.WriteLine();
+                    }
+                }
+
+                t.OutputPath = merged;
+                t.DownloadInfo = (chapters.Count - failed) + "/" + chapters.Count + L10n.T(" 章成功");
+                t.DownloadedBytes = new FileInfo(merged).Length;
+                t.TotalBytes = t.DownloadedBytes;
+                SetProgress(t, 100);
+                SetStatus(t, "done");
+                ShowDownloadNotification(t, -1, L10n.T("小说下载完成"));
+                if (failed > 0)
+                    t.Error = failed + L10n.T(" 个章节下载失败，成功的章节已保存");
+            }
+            catch (System.OperationCanceledException)
+            {
+                lock (_lock)
+                {
+                    t.Status = "canceled";
+                    t.Error = L10n.T("下载已取消；可重试重新下载");
+                }
+                SaveHistory();
+            }
+            catch (Exception ex) { Fail(t, ex.Message); }
+            finally
+            {
+                lock (_novelCancel) _novelCancel.Remove(id);
+            }
+        }
+
         // ---------------- m3u8 解析 ----------------
 
         /// <summary>URL 路径是否以指定扩展名结尾（忽略查询串与片段）。</summary>
@@ -622,6 +831,11 @@ namespace AhoChatA.Vod
             public long TotalBytes = -1;
             // 音乐失败任务重启后仍可重试：必须把歌曲上下文一起持久化
             public OnlineSong MusicSong = null;
+            // 小说按章任务重启后仍可重试：保存勾选章节快照（不保存正文，避免历史文件膨胀）
+            public string NovelChaptersJson = "";
+            public string NovelSourceKey = "";
+            public string NovelSourceName = "";
+            public bool PerChapterFiles = true;
         }
 
         /// <summary>载入历史记录（只恢复已结束的任务；进行中的任务重启后已无上下文）。</summary>
@@ -658,7 +872,11 @@ namespace AhoChatA.Vod
                             Added = r.AddedTicks > 0 ? new DateTime(r.AddedTicks, DateTimeKind.Utc) : DateTime.UtcNow,
                             DownloadedBytes = r.DownloadedBytes,
                             TotalBytes = r.TotalBytes,
-                            MusicSong = r.MusicSong
+                            MusicSong = r.MusicSong,
+                            NovelChaptersJson = r.NovelChaptersJson ?? "",
+                            NovelSourceKey = r.NovelSourceKey ?? "",
+                            NovelSourceName = r.NovelSourceName ?? "",
+                            PerChapterFiles = r.PerChapterFiles
                         };
                     }
                 }
@@ -695,7 +913,16 @@ namespace AhoChatA.Vod
                             AddedTicks = t.Added.Ticks,
                             DownloadedBytes = t.DownloadedBytes,
                             TotalBytes = t.TotalBytes,
-                            MusicSong = t.MusicSong
+                            MusicSong = t.MusicSong,
+                            NovelChaptersJson = t.NovelChapters == null ? "" :
+                                Newtonsoft.Json.JsonConvert.SerializeObject(t.NovelChapters.Select(c => new Chapter
+                                {
+                                    Index = c.Index, Title = c.Title, Url = c.Url,
+                                    IsVolume = c.IsVolume, IsVip = c.IsVip, IsPay = c.IsPay, Tag = c.Tag
+                                }).ToList()),
+                            NovelSourceKey = t.NovelSourceKey ?? "",
+                            NovelSourceName = t.NovelSourceName ?? "",
+                            PerChapterFiles = t.PerChapterFiles
                         });
                     }
                 }

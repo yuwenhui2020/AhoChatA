@@ -233,6 +233,7 @@
     <Compile Include="Reader\EncodingEx.cs" />
     <Compile Include="Reader\ReaderCookies.cs" />
     <Compile Include="Reader\ReaderLibrary.cs" />
+    <Compile Include="Reader\NovelAnalyzer.cs" />
     <Compile Include="FloatingWindowService.cs" />
     <Compile Include="ScreenDrawService.cs" />
     <Compile Include="ScreenDrawReceiver.cs" />

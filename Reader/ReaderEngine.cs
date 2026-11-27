@@ -43,6 +43,14 @@ namespace AhoChatA.Reader
         public async Task<string> FetchAsync(string url, Dictionary<string, string> headers = null, string postBody = null, string contentType = null, string charset = null)
         {
             var text = await FetchOnce(url, headers, postBody, contentType, charset, false).ConfigureAwait(false);
+            // 笔趣阁等站点前面挂着 Cloudflare，偶发 502（正文只有 "error code: 502"）。
+            // 只有异常短响应才重试，正常页面不增加请求。
+            for (int i = 0; i < 2 && (string.IsNullOrWhiteSpace(text) || text.Length < 100 || IsBotStub(text)); i++)
+            {
+                await Task.Delay(700).ConfigureAwait(false);
+                var again = await FetchOnce(url, headers, postBody, contentType, charset, false).ConfigureAwait(false);
+                if (!string.IsNullOrEmpty(again) && again.Length > (text == null ? 0 : text.Length)) text = again;
+            }
             // 反爬桩（<html>…window.location.href="/"）：补 Referer 再取一次
             if (IsBotStub(text))
             {

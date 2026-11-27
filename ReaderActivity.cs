@@ -108,9 +108,15 @@ namespace AhoChatA
 
         private bool _saveQueued;
 
-        // 发现页
+        // 「解析」页（替换原「发现」入口）
         private LinearLayout _explorePage, _exBody;
         private TextView _exTitle;
+        private EditText _parseUrl;
+        private TextView _parseStatus;
+        private NovelParseResult _parsed;
+        private readonly List<CheckBox> _parseChecks = new List<CheckBox>();
+        private bool _parsing;
+        // 旧发现页状态保留，方法仍可复用，但入口已被「解析」替换
         private ExploreCategory _exCat;
         private BookSource _exSrc;
         private int _exPage = 1;
@@ -371,7 +377,7 @@ namespace AhoChatA
             title.SetTypeface(Typeface.Default, TypefaceStyle.Bold);
             row.AddView(title, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WrapContent, 1f));
 
-            row.AddView(Pill(L10n.T("发现"), v => OpenExplore()));
+            row.AddView(Pill(L10n.T("解析"), v => OpenExplore()));
             row.AddView(Pill(L10n.T("搜索"), OnSearch));
             row.AddView(Pill(L10n.T("导入"), OnImport));
             row.AddView(Pill(L10n.T("书源"), OnManageSources));
@@ -3766,7 +3772,7 @@ namespace AhoChatA
             head.AddView(back, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WrapContent, ViewGroup.LayoutParams.WrapContent));
 
-            var t = new TextView(this) { Text = L10n.T("发现"), TextSize = 20 };
+            var t = new TextView(this) { Text = L10n.T("解析"), TextSize = 20 };
             t.SetTextColor(new Color(TextMain));
             t.SetTypeface(Typeface.Default, TypefaceStyle.Bold);
             head.AddView(t, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WrapContent, 1f));
@@ -3784,6 +3790,7 @@ namespace AhoChatA
             sv.AddView(_exBody);
             _explorePage.AddView(sv, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MatchParent, 0, 1f));
+            RenderParseIntro();
             return _explorePage;
         }
 
@@ -3791,7 +3798,238 @@ namespace AhoChatA
         {
             _shelfPage.Visibility = ViewStates.Gone;
             _explorePage.Visibility = ViewStates.Visible;
-            RenderExploreSources();
+            RenderParseIntro();
+        }
+
+        /* ---------------- 在线小说链接解析 ---------------- */
+
+        private void RenderParseIntro()
+        {
+            if (_exBody == null) return;
+            _exBody.RemoveAllViews();
+            _parseChecks.Clear();
+            _parsed = null;
+
+            var intro = new TextView(this)
+            {
+                Text = L10n.T("粘贴小说目录页或详情页链接，自动识别站点规则并列出章节；勾选后按章下载。"),
+                TextSize = 12.5f
+            };
+            intro.SetTextColor(new Color(TextSub));
+            intro.SetPadding(Dp(2), Dp(8), Dp(2), Dp(12));
+            _exBody.AddView(intro);
+
+            _parseUrl = new EditText(this)
+            {
+                Hint = L10n.T("例如：https://example.com/book/123/"),
+                TextSize = 14,
+                Background = RoundBg(CardBg, 12)
+            };
+            _parseUrl.SetTextColor(new Color(TextMain));
+            _parseUrl.SetPadding(Dp(12), Dp(11), Dp(12), Dp(11));
+            // 不在获得焦点时自动粘剪贴板：用户可能正在输入，自动粘贴会把剪贴板里的
+            // 任意文字插到链接前面，导致解析失败。需要粘贴时用户自己长按即可。
+            _exBody.AddView(_parseUrl, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.WrapContent));
+
+            var go = new TextView(this) { Text = L10n.T("解析链接"), TextSize = 15 };
+            go.Gravity = GravityFlags.Center;
+            go.SetTextColor(Color.White);
+            go.SetTypeface(Typeface.Default, TypefaceStyle.Bold);
+            go.Background = RoundBg(Accent, 12);
+            var gop = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MatchParent, Dp(44));
+            gop.TopMargin = Dp(10);
+            go.LayoutParameters = gop;
+            go.Click += (s, e) => ParseUrlAction();
+            _exBody.AddView(go);
+
+            _parseStatus = new TextView(this)
+            {
+                Text = L10n.T("尚未解析"),
+                TextSize = 12
+            };
+            _parseStatus.SetTextColor(new Color(TextSub));
+            _parseStatus.SetPadding(Dp(2), Dp(12), Dp(2), Dp(8));
+            _exBody.AddView(_parseStatus);
+            _exTitle.Text = "";
+        }
+
+        private async void ParseUrlAction()
+        {
+            if (_parsing) return;
+            var url = NovelAnalyzer.NormalizeUrl(_parseUrl?.Text);
+            if (string.IsNullOrEmpty(url))
+            {
+                ShowToast(L10n.T("请输入有效的 http/https 链接"));
+                return;
+            }
+            _parsing = true;
+            _parseStatus.Text = L10n.T("正在解析…");
+            try
+            {
+                var result = await NovelAnalyzer.ParseAsync(url, msg => RunOnUiThread(() =>
+                {
+                    if (_parseStatus != null) _parseStatus.Text = msg;
+                }));
+                if (result == null || result.Chapters.Count == 0)
+                {
+                    _parseStatus.Text = result == null ? L10n.T("解析失败") : result.Message;
+                    ShowToast(_parseStatus.Text);
+                    return;
+                }
+                _parsed = result;
+                RenderParsedChapters();
+            }
+            catch (Exception ex)
+            {
+                _parseStatus.Text = L10n.T("解析失败：") + ex.Message;
+                ShowToast(_parseStatus.Text);
+            }
+            finally { _parsing = false; }
+        }
+
+        private void RenderParsedChapters()
+        {
+            if (_exBody == null || _parsed == null) return;
+            // RenderParseIntro 会清空状态；先保存解析结果，恢复后再渲染章节列表
+            var parsed = _parsed;
+            RenderParseIntro();
+            _parsed = parsed;
+            _parseUrl.Text = parsed.Book.BookUrl;
+            _parseChecks.Clear();
+
+            var head = new TextView(this)
+            {
+                Text = parsed.Book.Name + L10n.T(" · 共 ") + parsed.Chapters.Count + L10n.T(" 章 · ") + parsed.SourceName,
+                TextSize = 13
+            };
+            head.SetTextColor(new Color(TextMain));
+            head.SetTypeface(Typeface.Default, TypefaceStyle.Bold);
+            head.SetPadding(Dp(2), Dp(4), Dp(2), Dp(8));
+            _exBody.AddView(head);
+
+            var actions = new LinearLayout(this) { Orientation = Orientation.Horizontal };
+            actions.SetPadding(Dp(0), Dp(0), Dp(0), Dp(6));
+            actions.AddView(ParseAction(L10n.T("全选"), v => SetAllParseChapters(1)));
+            actions.AddView(ParseAction(L10n.T("全不选"), v => SetAllParseChapters(0)));
+            actions.AddView(ParseAction(L10n.T("反选"), v => SetAllParseChapters(-1)));
+            actions.AddView(ParseAction(L10n.T("加载更多"), v => LoadMoreParseChapters()));
+            _exBody.AddView(actions);
+
+            for (int i = 0; i < _parsed.Chapters.Count; i++)
+                _exBody.AddView(ParseChapterRow(i, _parsed.Chapters[i]));
+
+            var download = new TextView(this) { Text = L10n.T("下载选中章节"), TextSize = 15 };
+            download.Gravity = GravityFlags.Center;
+            download.SetTextColor(Color.White);
+            download.SetTypeface(Typeface.Default, TypefaceStyle.Bold);
+            download.Background = RoundBg(Accent, 12);
+            var lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, Dp(46));
+            lp.TopMargin = Dp(12);
+            download.LayoutParameters = lp;
+            download.Click += (s, e) => DownloadParsedChapters();
+            _exBody.AddView(download);
+
+            _parseStatus.Text = _parsed.Message;
+            _exTitle.Text = _parsed.SourceName;
+        }
+
+        private TextView ParseAction(string text, Action<View> onClick)
+        {
+            var v = Pill(text, onClick);
+            var lp = v.LayoutParameters as LinearLayout.LayoutParams;
+            if (lp != null)
+            {
+                lp.Width = 0;
+                lp.Weight = 1f;
+                lp.LeftMargin = Dp(3);
+                lp.RightMargin = Dp(3);
+            }
+            return v;
+        }
+
+        private View ParseChapterRow(int index, Chapter ch)
+        {
+            var row = new LinearLayout(this) { Orientation = Orientation.Horizontal };
+            row.Background = RoundBg(CardBg, 10);
+            row.SetPadding(Dp(10), Dp(8), Dp(10), Dp(8));
+            var lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.WrapContent);
+            lp.BottomMargin = Dp(6);
+            row.LayoutParameters = lp;
+
+            // CheckBox 自己处理点击（默认会切换状态），不要再手工反转，否则等于没点
+            var cb = new CheckBox(this) { Checked = true, Focusable = false, FocusableInTouchMode = false };
+            row.AddView(cb, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WrapContent, ViewGroup.LayoutParams.WrapContent));
+            _parseChecks.Add(cb);
+
+            var tv = new TextView(this)
+            {
+                Text = (index + 1) + ". " + (ch.Title ?? ""),
+                TextSize = 13.5f
+            };
+            tv.SetTextColor(new Color(TextMain));
+            tv.SetMaxLines(2);
+            tv.Ellipsize = Android.Text.TextUtils.TruncateAt.End;
+            tv.LayoutParameters = new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WrapContent, 1f) { Gravity = GravityFlags.CenterVertical };
+            row.AddView(tv);
+            row.Click += (s, e) => { cb.Checked = !cb.Checked; };
+            return row;
+        }
+
+        private void SetAllParseChapters(int mode)
+        {
+            if (_parsed == null) return;
+            for (int i = 0; i < _parseChecks.Count && i < _parsed.Chapters.Count; i++)
+            {
+                if (mode == 1) _parseChecks[i].Checked = true;
+                else if (mode == 0) _parseChecks[i].Checked = false;
+                else _parseChecks[i].Checked = !_parseChecks[i].Checked;
+            }
+        }
+
+        private async void LoadMoreParseChapters()
+        {
+            if (_parsed == null || !_parsed.HasMore || _parsing) return;
+            _parsing = true;
+            _parseStatus.Text = L10n.T("正在加载更多章节…");
+            try
+            {
+                var old = _parsed.Chapters.Count;
+                await NovelAnalyzer.LoadMoreAsync(_parsed, msg => RunOnUiThread(() =>
+                {
+                    if (_parseStatus != null) _parseStatus.Text = msg;
+                }));
+                if (_parsed.Chapters.Count > old) RenderParsedChapters();
+                else ShowToast(L10n.T("没有更多章节了"));
+            }
+            catch (Exception ex) { ShowToast(L10n.T("加载失败：") + ex.Message); }
+            finally { _parsing = false; }
+        }
+
+        private void DownloadParsedChapters()
+        {
+            if (_parsed == null) { ShowToast(L10n.T("请先解析链接")); return; }
+            var selected = new List<Chapter>();
+            for (int i = 0; i < _parseChecks.Count && i < _parsed.Chapters.Count; i++)
+            {
+                if (_parseChecks[i].Checked) selected.Add(_parsed.Chapters[i]);
+            }
+            if (selected.Count == 0) { ShowToast(L10n.T("至少选择一个章节")); return; }
+
+            try
+            {
+                var task = AhoChatA.Vod.DownloadCenter.QueueNovelChapters(
+                    _parsed.Book.Name,
+                    _parsed.Source == null ? "" : _parsed.Source.BookSourceUrl,
+                    selected,
+                    _parsed.SourceName);
+                ShowToast(L10n.T("已加入下载队列：") + selected.Count + L10n.T(" 章，进度见「服务 → 媒体 → 下载」"));
+            }
+            catch (Exception ex) { ShowToast(L10n.T("加入下载队列失败：") + ex.Message); }
         }
 
         private void CloseExplore()
