@@ -47,6 +47,15 @@ namespace AhoChatA.Reader
         }
     }
 
+    /// <summary>章节预览：正文、实际跟随的同章页数和可疑内容提示。</summary>
+    public sealed class ChapterPreview
+    {
+        public string Text = "";
+        public int PageCount;
+        public bool ReachedPageLimit;
+        public readonly List<string> Warnings = new List<string>();
+    }
+
     public static class NovelAnalyzer
     {
         // apibi.cc 的证书在部分国内 Android 环境不被信任；只对这一个主机放宽校验，
@@ -58,7 +67,7 @@ namespace AhoChatA.Reader
                 req != null && req.RequestUri != null && IsApibiHost(req.RequestUri.Host)
         }) { Timeout = TimeSpan.FromSeconds(30) };
 
-        private const int MaxTocPages = 12;      // 通用目录最多自动翻 12 页，避免一次粘链接就抓几千页
+        private const int MaxTocPages = 120;     // 目录多页时自动补齐；超过上限仍保留“加载更多”按钮
         private const int MaxChapterPages = 12;  // 单章最多跟 12 个续页（如 0_2.html），避免误抓整本书
         private const int MinChapters = 2;       // 少于 2 章的“目录”基本是误判
 
@@ -233,9 +242,12 @@ namespace AhoChatA.Reader
                     result.NextPageUrl = "";
                     break;
                 }
-                Report(progress, L10n.T("正在加载更多章节…"));
+                Report(progress, L10n.T("正在加载更多章节…") + " " + (pages + 1));
+                var before = result.NextPageUrl;
                 var added = await LoadMoreAsync(result).ConfigureAwait(false);
-                if (added == 0 && string.IsNullOrEmpty(result.NextPageUrl)) break;
+                // 读取失败时 LoadMoreAsync 会保留原下一页地址，供用户点「加载更多」重试；
+                // 这里不能因为 added==0 就把地址清掉，否则剩余目录永久丢失。
+                if (added == 0 && string.Equals(before, result.NextPageUrl, StringComparison.OrdinalIgnoreCase)) break;
                 pages++;
             }
             return result;
@@ -248,8 +260,30 @@ namespace AhoChatA.Reader
             var url = result.NextPageUrl;
             Report(progress, L10n.T("正在加载更多章节…"));
             var headers = result.Source == null ? null : result.Source.ParseHeader();
-            var html = await ReaderLibrary.Engine.FetchAsync(url, headers).ConfigureAwait(false);
-            if (string.IsNullOrWhiteSpace(html)) return 0;
+            string html = "";
+            // 目录页偶发 502/空壳响应，重试几次；仍失败时保留 NextPageUrl，便于用户点「加载更多」重试。
+            for (int attempt = 0; attempt < 3 && string.IsNullOrWhiteSpace(html); attempt++)
+            {
+                if (attempt > 0)
+                {
+                    Report(progress, L10n.T("目录下一页读取失败，正在重试…") + " " + (attempt + 1));
+                    await Task.Delay(700 * attempt).ConfigureAwait(false);
+                }
+                try
+                {
+                    html = await ReaderLibrary.Engine.FetchAsync(url, headers).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    Android.Util.Log.Warn("NovelParse", "目录下一页失败: " + ex.Message);
+                    html = "";
+                }
+            }
+            if (string.IsNullOrWhiteSpace(html))
+            {
+                Report(progress, L10n.T("目录下一页读取失败，可点「加载更多」重试"));
+                return 0;
+            }
 
             string next;
             var got = ChaptersFromHtml(html, url, out next);
@@ -694,14 +728,25 @@ namespace AhoChatA.Reader
                 });
             }
 
-            // 找“下一页”：用于用户主动点“加载更多”，不自动无限制抓取
+            // 找“下一页”：兼容 rel/class/id/onclick；只认明确的翻页文案，不误抓“下一章”。
             foreach (var a in anchors)
             {
                 var rel = (a.GetAttributeValue("rel", "") ?? "").Trim();
+                var cls = (a.GetAttributeValue("class", "") ?? "").Trim();
+                var id = (a.GetAttributeValue("id", "") ?? "").Trim();
                 var text = CleanText(a.InnerText);
-                if (!string.Equals(rel, "next", StringComparison.OrdinalIgnoreCase) &&
-                    !Regex.IsMatch(text, @"^(下一页|下页|更多章节|查看更多|更多)$")) continue;
+                bool looksNext =
+                    string.Equals(rel, "next", StringComparison.OrdinalIgnoreCase) ||
+                    Regex.IsMatch(text, @"^(下一页|下页|后一页|更多章节|查看更多|更多)$") ||
+                    Regex.IsMatch(cls + " " + id, @"(^|[\s_-])(next|page-next|xiayiye)\b", RegexOptions.IgnoreCase);
+                if (!looksNext) continue;
                 var href = (a.GetAttributeValue("href", "") ?? "").Trim();
+                if (IsPlaceholderHref(href))
+                {
+                    var jsUrl = ExtractLocationFromJs(a.GetAttributeValue("onclick", ""));
+                    if (!string.IsNullOrEmpty(jsUrl)) href = jsUrl;
+                }
+                if (IsPlaceholderHref(href)) continue;
                 Uri u;
                 if (Uri.TryCreate(baseUri, href, out u) &&
                     (u.Scheme == Uri.UriSchemeHttp || u.Scheme == Uri.UriSchemeHttps) &&
@@ -804,12 +849,25 @@ namespace AhoChatA.Reader
 
         /* ---------------- 正文 ---------------- */
 
-        /// <summary>
-        /// 下载器用：优先书源 content 规则；无规则时按常见正文容器探测。
-        /// </summary>
+        /// <summary>下载器用：只取正文文本。</summary>
         public static async Task<string> ChapterTextAsync(BookSource src, Chapter ch)
         {
-            if (ch == null || string.IsNullOrEmpty(ch.Url)) return "";
+            var preview = await ChapterPreviewAsync(src, ch).ConfigureAwait(false);
+            return preview == null ? "" : preview.Text;
+        }
+
+        /// <summary>
+        /// 预览用：抓取正文并报告同章分页数量、是否触及页数上限及可疑内容。
+        /// 下载器与预览共用同一套抓取逻辑，避免“预览正常、下载不全”。
+        /// </summary>
+        public static async Task<ChapterPreview> ChapterPreviewAsync(BookSource src, Chapter ch)
+        {
+            var preview = new ChapterPreview();
+            if (ch == null || string.IsNullOrEmpty(ch.Url))
+            {
+                preview.Warnings.Add(L10n.T("章节链接为空"));
+                return preview;
+            }
 
             // biquge.mom 的正文是接口返回的整章纯文本，没有分页。
             int momBook, momChapter;
@@ -821,7 +879,13 @@ namespace AhoChatA.Reader
                         "{\"id\":" + momBook + ",\"chapterid\":" + momChapter + "}").ConfigureAwait(false);
                     var json = JObject.Parse(raw);
                     var momText = json["txt"] == null ? "" : json["txt"].ToString();
-                    if (!string.IsNullOrWhiteSpace(momText)) return AnalyzeRule.CleanBlock(momText);
+                    if (!string.IsNullOrWhiteSpace(momText))
+                    {
+                        preview.Text = AnalyzeRule.CleanBlock(momText);
+                        preview.PageCount = 1;
+                        AddPreviewWarnings(preview);
+                        return preview;
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -836,7 +900,13 @@ namespace AhoChatA.Reader
                 try
                 {
                     var txt = await engine.FetchContentAsync(src, ch.Url).ConfigureAwait(false);
-                    if (!string.IsNullOrWhiteSpace(txt)) return txt;
+                    if (!string.IsNullOrWhiteSpace(txt))
+                    {
+                        preview.Text = txt;
+                        preview.PageCount = 1;
+                        AddPreviewWarnings(preview);
+                        return preview;
+                    }
                 }
                 catch { }
             }
@@ -887,16 +957,55 @@ namespace AhoChatA.Reader
                     best = body;
                 }
                 htmlParts.Add(best.InnerHtml);
+                preview.PageCount++;
 
                 if (string.IsNullOrEmpty(next) || visited.Contains(next)) break;
+                if (page == MaxChapterPages - 1)
+                {
+                    preview.ReachedPageLimit = true;
+                    break;
+                }
                 current = next;
             }
 
-            if (htmlParts.Count == 0) return "";
+            if (htmlParts.Count == 0)
+            {
+                AddPreviewWarnings(preview);
+                return preview;
+            }
             var text = BookParser.HtmlToText(string.Join("\n", htmlParts.ToArray()));
             // 去掉常见的“上一章/下一章/目录”导航尾巴
             text = Regex.Replace(text, @"(?m)^\s*(上一章|下一章|上一页|下一页|返回目录|加入书签|目录|本章未完.*|更多内容加载中.*|本站只支持手机浏览器访问.*)\s*[：:]?.*$", "");
-            return AnalyzeRule.CleanBlock(text);
+            preview.Text = AnalyzeRule.CleanBlock(text);
+            AddPreviewWarnings(preview);
+            return preview;
+        }
+
+        private static void AddPreviewWarnings(ChapterPreview preview)
+        {
+            if (preview == null) return;
+            var text = preview.Text ?? "";
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                preview.Warnings.Add(L10n.T("未抓到正文"));
+                return;
+            }
+            if (text.Length < 200)
+                preview.Warnings.Add(L10n.T("正文过短，可能只抓到导航或提示"));
+            var junkHits = 0;
+            var junkWords = new[]
+            {
+                "加入书架", "字体", "护眼", "回目录", "最新章节", "免费阅读",
+                "开始阅读", "本章未完", "更多内容加载中", "全本txt下载", "请收藏"
+            };
+            foreach (var word in junkWords)
+                junkHits += Regex.Matches(text, Regex.Escape(word), RegexOptions.IgnoreCase).Count;
+            if (junkHits > 3)
+                preview.Warnings.Add(L10n.T("含较多导航/按钮文案，可能不是正文"));
+            if (Regex.IsMatch(text, @"(502 Bad Gateway|Bad Gateway|error code: 502)", RegexOptions.IgnoreCase))
+                preview.Warnings.Add(L10n.T("抓到服务器错误页"));
+            if (preview.ReachedPageLimit)
+                preview.Warnings.Add(L10n.T("达到单章页数上限，可能仍有续页"));
         }
 
         /// <summary>

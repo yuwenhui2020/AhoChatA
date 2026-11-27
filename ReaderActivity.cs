@@ -116,6 +116,8 @@ namespace AhoChatA
         private NovelParseResult _parsed;
         private readonly List<CheckBox> _parseChecks = new List<CheckBox>();
         private bool _parsing;
+        private bool _previewing;
+        private const int ChapterPreviewLimit = 8000;
         // 旧发现页状态保留，方法仍可复用，但入口已被「解析」替换
         private ExploreCategory _exCat;
         private BookSource _exSrc;
@@ -3907,8 +3909,17 @@ namespace AhoChatA
             };
             head.SetTextColor(new Color(TextMain));
             head.SetTypeface(Typeface.Default, TypefaceStyle.Bold);
-            head.SetPadding(Dp(2), Dp(4), Dp(2), Dp(8));
+            head.SetPadding(Dp(2), Dp(4), Dp(2), Dp(2));
             _exBody.AddView(head);
+
+            var hint = new TextView(this)
+            {
+                Text = L10n.T("点击章节名预览正文"),
+                TextSize = 12
+            };
+            hint.SetTextColor(new Color(TextSub));
+            hint.SetPadding(Dp(2), Dp(0), Dp(2), Dp(8));
+            _exBody.AddView(hint);
 
             var actions = new LinearLayout(this) { Orientation = Orientation.Horizontal };
             actions.SetPadding(Dp(0), Dp(0), Dp(0), Dp(6));
@@ -3971,14 +3982,74 @@ namespace AhoChatA
                 Text = (index + 1) + ". " + (ch.Title ?? ""),
                 TextSize = 13.5f
             };
-            tv.SetTextColor(new Color(TextMain));
+            tv.SetTextColor(new Color(Accent));
+            tv.PaintFlags = tv.PaintFlags | PaintFlags.UnderlineText;
             tv.SetMaxLines(2);
             tv.Ellipsize = Android.Text.TextUtils.TruncateAt.End;
             tv.LayoutParameters = new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WrapContent, 1f) { Gravity = GravityFlags.CenterVertical };
+            tv.Click += (s, e) => PreviewParsedChapter(ch);
             row.AddView(tv);
+            // 点标题预览；点整行空白处仍切换勾选，方便批量选择。
             row.Click += (s, e) => { cb.Checked = !cb.Checked; };
             return row;
+        }
+
+        private async void PreviewParsedChapter(Chapter ch)
+        {
+            if (ch == null || _previewing) return;
+            _previewing = true;
+            if (_parseStatus != null) _parseStatus.Text = L10n.T("正在读取章节预览…");
+            try
+            {
+                var pv = await NovelAnalyzer.ChapterPreviewAsync(
+                    _parsed == null ? null : _parsed.Source, ch).ConfigureAwait(true);
+
+                var box = new LinearLayout(this) { Orientation = Orientation.Vertical };
+                box.SetPadding(Dp(16), Dp(12), Dp(16), Dp(12));
+
+                var meta = new TextView(this) { TextSize = 13 };
+                meta.SetTextColor(new Color(TextMain));
+                var completeness = pv.Warnings.Count == 0
+                    ? L10n.T("完整性：未发现截断或噪声迹象，已读到最后一页")
+                    : L10n.T("完整性：存在可疑迹象，请核对");
+                meta.Text = L10n.T("已读取 ") + pv.PageCount + L10n.T(" 页同章内容 · ") +
+                            (pv.Text ?? "").Length + L10n.T(" 字") + "\n" + completeness;
+                if (pv.Warnings.Count > 0)
+                    meta.Text += "\n" + string.Join("\n", pv.Warnings.ToArray());
+                box.AddView(meta);
+
+                var bodyText = pv.Text ?? "";
+                if (bodyText.Length > ChapterPreviewLimit)
+                {
+                    bodyText = bodyText.Substring(0, ChapterPreviewLimit) + "\n…\n" +
+                               L10n.T("预览仅显示前 ") + ChapterPreviewLimit + L10n.T(" 字，下载会保存全文");
+                }
+                var body = new TextView(this) { Text = bodyText, TextSize = 13.5f };
+                body.SetTextColor(new Color(TextMain));
+                body.SetPadding(Dp(10), Dp(10), Dp(10), Dp(10));
+                var scroll = new ScrollView(this);
+                scroll.SetBackgroundDrawable(RoundBg(CardBg, 8));
+                scroll.AddView(body);
+                box.AddView(scroll, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MatchParent, 0, 1f));
+
+                var b = L10n.Dialog(this);
+                b.SetTitle(ch.Title ?? L10n.T("章节预览"));
+                b.SetView(box);
+                b.SetPositiveButton(L10n.T("关闭"), (s, e) => { });
+                b.Create().Show();
+            }
+            catch (Exception ex)
+            {
+                ShowToast(L10n.T("预览失败：") + ex.Message);
+            }
+            finally
+            {
+                _previewing = false;
+                if (_parseStatus != null)
+                    _parseStatus.Text = _parsed == null ? "" : _parsed.Message;
+            }
         }
 
         private void SetAllParseChapters(int mode)
