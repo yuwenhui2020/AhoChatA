@@ -73,6 +73,23 @@ namespace AhoChatA.Reader
             @"|\bch(?:apter)?[_/-]?[0-9]{1,6}\b" +
             @"|\b[0-9]{1,6}\.html?$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
+        // 章号只认「章/回/话」和 chapter N；卷号不能被误当作章号。
+        private static readonly Regex ChapterNumberRegex = new Regex(
+            @"第\s*([0-9零一二三四五六七八九十百千万两]+)\s*[章节回话]" +
+            @"|chapter\s*([0-9]{1,6})", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+        private static readonly Regex LooseChapterNumberRegex = new Regex(
+            @"(?<![0-9])([0-9]{1,6})\s*[章节回话]", RegexOptions.Compiled);
+
+        // 分卷标识只取章号前面的部分，避免把章名里的「新篇章」误当成卷名。
+        private static readonly Regex NumericVolumeRegex = new Regex(
+            @"第\s*([0-9零一二三四五六七八九十百千万两]+)\s*([卷部篇集])" +
+            @"|([卷部篇集])\s*([0-9零一二三四五六七八九十百千万两]+)", RegexOptions.Compiled);
+
+        private static readonly Regex NamedVolumeRegex = new Regex(
+            @"番外篇|番外|外传|正篇|新篇|终篇|旧篇|续篇|前传|后传|特别篇|上卷|下卷|上部|下部|上册|下册",
+            RegexOptions.Compiled);
+
         private static readonly Regex NavTextRegex = new Regex(
             @"^(下一页|下页|上一页|上页|首页|末页|更多|更多章节|查看更多|返回目录|目录|章节目录|全部章节|最新章节|最新九章|" +
             @"完结|简介|详情|书架|加入书架|收藏|推荐|版权|下载|txt下载|全文阅读|免费阅读|开始阅读|立即阅读|在线阅读|手机阅读|电脑阅读)$",
@@ -383,51 +400,125 @@ namespace AhoChatA.Reader
 
         /* ---------------- 章节排序 ---------------- */
 
-        /// <summary>按“第1章 / 第一章 / 第001章”排序；无章号时保持原顺序。</summary>
+        /// <summary>按“第1章 / 第一章 / 第001章”排序；分卷单独成组；无章号时保持原顺序。</summary>
         public static void SortChapters(List<Chapter> chapters)
         {
             if (chapters == null || chapters.Count < 2) return;
-            var keys = new List<int>();
+            int count = chapters.Count;
+            var numbers = new int[count];
+            var volumes = new string[count];
             int parsed = 0;
-            for (int i = 0; i < chapters.Count; i++)
+            for (int i = 0; i < count; i++)
             {
+                var title = NormalizeTitleDigits(chapters[i] == null ? "" : chapters[i].Title);
+                var match = ChapterNumberMatch(title);
                 int n;
-                keys.Add(TryChapterNumber(chapters[i] == null ? "" : chapters[i].Title, out n) ? n : i + 1);
-                if (TryChapterNumber(chapters[i] == null ? "" : chapters[i].Title, out n)) parsed++;
+                numbers[i] = TryChapterNumberFromMatch(match, out n) ? n : 0;
+                if (numbers[i] > 0) parsed++;
+                volumes[i] = VolumeKey(title, match);
             }
             // 绝大多数标题都没有章号，就完全尊重站点原顺序。
-            if (parsed * 2 < chapters.Count) return;
-            var order = Enumerable.Range(0, chapters.Count).ToList();
+            if (parsed * 2 < count) return;
+
+            // 同一卷可能从 1 重新开始编号。卷之间保持目录顺序，卷内才按章号排。
+            // 用最后一次出现的位置定卷序：目录顶部常有「最新章节」重复引用，
+            // 若用首次出现位置，终篇会被误排到正文前面。
+            var volumeOrder = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            for (int i = 0; i < count; i++) volumeOrder[volumes[i]] = i;
+
+            var order = Enumerable.Range(0, count).ToList();
             order.Sort((a, b) =>
             {
-                int c = keys[a].CompareTo(keys[b]);
-                return c != 0 ? c : a.CompareTo(b);
+                int va, vb;
+                volumeOrder.TryGetValue(volumes[a], out va);
+                volumeOrder.TryGetValue(volumes[b], out vb);
+                int c = va.CompareTo(vb);
+                if (c != 0) return c;
+                if (numbers[a] > 0 && numbers[b] > 0)
+                {
+                    c = numbers[a].CompareTo(numbers[b]);
+                    if (c != 0) return c;
+                }
+                // 无章号的条目或同章号，保持原本先后顺序。
+                return a.CompareTo(b);
             });
-            var sorted = new List<Chapter>(chapters.Count);
+            var sorted = new List<Chapter>(count);
             foreach (var i in order) sorted.Add(chapters[i]);
             for (int i = 0; i < sorted.Count; i++)
             {
-                sorted[i].Index = i;
+                if (sorted[i] != null) sorted[i].Index = i;
                 chapters[i] = sorted[i];
             }
+        }
+
+        private static string NormalizeTitleDigits(string title)
+        {
+            if (string.IsNullOrEmpty(title)) return "";
+            return title.Replace('０', '0').Replace('１', '1').Replace('２', '2')
+                        .Replace('３', '3').Replace('４', '4').Replace('５', '5')
+                        .Replace('６', '6').Replace('７', '7').Replace('８', '8').Replace('９', '9');
+        }
+
+        private static Match ChapterNumberMatch(string normalizedTitle)
+        {
+            var m = ChapterNumberRegex.Match(normalizedTitle ?? "");
+            if (!m.Success) m = LooseChapterNumberRegex.Match(normalizedTitle ?? "");
+            return m;
+        }
+
+        private static bool TryChapterNumberFromMatch(Match m, out int number)
+        {
+            number = 0;
+            if (m == null || !m.Success) return false;
+            var token = m.Groups.Count > 2 && m.Groups[2].Success
+                ? m.Groups[2].Value
+                : m.Groups[1].Value;
+            return TryParseNumberToken(token, out number);
+        }
+
+        private static bool TryParseNumberToken(string token, out int number)
+        {
+            number = 0;
+            if (string.IsNullOrEmpty(token)) return false;
+            if (Regex.IsMatch(token, "^[0-9]+$"))
+                return int.TryParse(token, out number) && number > 0;
+            number = ChineseNumber(token);
+            return number > 0;
+        }
+
+        /// <summary>取章号前面的卷/篇/部标识；取不到时归入默认卷。</summary>
+        private static string VolumeKey(string normalizedTitle, Match chapterMatch)
+        {
+            if (string.IsNullOrWhiteSpace(normalizedTitle)) return "";
+            int end = chapterMatch != null && chapterMatch.Success
+                ? chapterMatch.Index
+                : normalizedTitle.Length;
+            if (end <= 0) return "";
+            var prefix = normalizedTitle.Substring(0, end);
+
+            var numeric = NumericVolumeRegex.Match(prefix);
+            if (numeric.Success)
+            {
+                var token = numeric.Groups[1].Success ? numeric.Groups[1].Value : numeric.Groups[4].Value;
+                var unit = numeric.Groups[2].Success ? numeric.Groups[2].Value : numeric.Groups[3].Value;
+                int n;
+                if (TryParseNumberToken(token, out n)) return unit + n;
+            }
+
+            var named = NamedVolumeRegex.Match(prefix);
+            if (!named.Success) return "";
+            var name = named.Value;
+            if (name == "番外篇" || name == "番外") return "番外";
+            if (name == "上卷" || name == "上册" || name == "上部") return "上";
+            if (name == "下卷" || name == "下册" || name == "下部") return "下";
+            return name;
         }
 
         private static bool TryChapterNumber(string title, out int number)
         {
             number = 0;
-            if (string.IsNullOrWhiteSpace(title)) return false;
-            var s = title.Replace('０', '0').Replace('１', '1').Replace('２', '2')
-                         .Replace('３', '3').Replace('４', '4').Replace('５', '5')
-                         .Replace('６', '6').Replace('７', '7').Replace('８', '8').Replace('９', '9');
-            var m = Regex.Match(s,
-                @"(?:第|chapter\s*)\s*([0-9一二三四五六七八九十百千万零两]+)",
-                RegexOptions.IgnoreCase);
-            if (!m.Success) m = Regex.Match(s, @"([0-9]{1,6})\s*[章节回卷部篇集话]");
-            if (!m.Success) return false;
-            var token = m.Groups[1].Value;
-            if (Regex.IsMatch(token, "^[0-9]+$")) return int.TryParse(token, out number) && number > 0;
-            number = ChineseNumber(token);
-            return number > 0;
+            var match = ChapterNumberMatch(NormalizeTitleDigits(title));
+            return TryChapterNumberFromMatch(match, out number);
         }
 
         private static int ChineseNumber(string s)
