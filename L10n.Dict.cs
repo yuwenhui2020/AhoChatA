@@ -1794,6 +1794,7 @@ namespace AhoChatA
             [" 章，进度见「服务 → 媒体 → 下载」"] = " chapters; see Services → Media → Downloads",
             ["（本章下载失败，已跳过）"] = "(This chapter failed and was skipped)",
             [" 个章节下载失败，已强制合并成功的 "] = " chapters failed; merged the successful ",
+            ["正在读取站点接口目录…"] = "Reading site catalog API…",
             };
         }
     }

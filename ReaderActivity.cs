@@ -3883,6 +3883,7 @@ namespace AhoChatA
             }
             catch (Exception ex)
             {
+                Android.Util.Log.Warn("NovelParse", "解析异常: " + ex);
                 _parseStatus.Text = L10n.T("解析失败：") + ex.Message;
                 ShowToast(_parseStatus.Text);
             }

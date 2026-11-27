@@ -14,7 +14,9 @@
 // ============================================================
 using System;
 using System.Collections.Generic;
+using System.Net;
 using System.Net.Http;
+using System.Net.Security;
 using System.Text;
 using System.Threading.Tasks;
 using Jint.Runtime;
@@ -34,7 +36,23 @@ namespace AhoChatA.Reader
             UseProxy = false                          // 书源直连，避免系统 HTTP_PROXY 干扰（legado 同）
         });
 
-        static ReaderEngine() { _http.Timeout = TimeSpan.FromSeconds(30); }
+        static ReaderEngine()
+        {
+            _http.Timeout = TimeSpan.FromSeconds(30);
+            // apibi.cc 的证书在部分 Android 环境被判不受信任；只对这一个主机放宽，
+            // 其它 HTTPS 仍按系统标准校验，避免全局关闭证书验证。
+            ServicePointManager.ServerCertificateValidationCallback =
+                (sender, cert, chain, errors) =>
+                {
+                    var req = sender as HttpWebRequest;
+                    if (req != null && req.RequestUri != null &&
+                        (string.Equals(req.RequestUri.Host, "apibi.cc", StringComparison.OrdinalIgnoreCase) ||
+                         string.Equals(req.RequestUri.Host, "api.apibi.cc", StringComparison.OrdinalIgnoreCase) ||
+                         string.Equals(req.RequestUri.Host, "www.apibi.cc", StringComparison.OrdinalIgnoreCase)))
+                        return true;
+                    return errors == SslPolicyErrors.None;
+                };
+        }
 
         private const int MaxTocPages = 30;
         private const int MaxContentPages = 10;
@@ -45,11 +63,13 @@ namespace AhoChatA.Reader
             var text = await FetchOnce(url, headers, postBody, contentType, charset, false).ConfigureAwait(false);
             // 笔趣阁等站点前面挂着 Cloudflare，偶发 502（正文只有 "error code: 502"）。
             // 只有异常短响应才重试，正常页面不增加请求。
-            for (int i = 0; i < 2 && (string.IsNullOrWhiteSpace(text) || text.Length < 100 || IsBotStub(text)); i++)
+            for (int i = 0; i < 3 && (string.IsNullOrWhiteSpace(text) || text.Length < 100 || IsBotStub(text) || IsServerErrorStub(text)); i++)
             {
                 await Task.Delay(700).ConfigureAwait(false);
-                var again = await FetchOnce(url, headers, postBody, contentType, charset, false).ConfigureAwait(false);
-                if (!string.IsNullOrEmpty(again) && again.Length > (text == null ? 0 : text.Length)) text = again;
+                var again = await FetchOnce(url, headers, postBody, contentType, charset, true).ConfigureAwait(false);
+                if (!string.IsNullOrEmpty(again) &&
+                    (again.Length > (text == null ? 0 : text.Length) || !IsServerErrorStub(again)))
+                    text = again;
             }
             // 反爬桩（<html>…window.location.href="/"）：补 Referer 再取一次
             if (IsBotStub(text))
@@ -65,6 +85,15 @@ namespace AhoChatA.Reader
             if (string.IsNullOrEmpty(text) || text.Length > 800) return false;
             return text.IndexOf("window.location", StringComparison.OrdinalIgnoreCase) >= 0
                    || text.IndexOf("Just a moment", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static bool IsServerErrorStub(string text)
+        {
+            if (string.IsNullOrEmpty(text) || text.Length > 1500) return false;
+            return text.IndexOf("502 Bad Gateway", StringComparison.OrdinalIgnoreCase) >= 0
+                   || text.IndexOf("Bad Gateway", StringComparison.OrdinalIgnoreCase) >= 0
+                   || text.IndexOf("error code: 502", StringComparison.OrdinalIgnoreCase) >= 0
+                   || text.IndexOf("503 Service Unavailable", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private async Task<string> FetchOnce(string url, Dictionary<string, string> headers, string postBody,

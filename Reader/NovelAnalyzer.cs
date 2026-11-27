@@ -12,10 +12,14 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net.Http;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Fizzler.Systems.HtmlAgilityPack;
 using HtmlAgilityPack;
+using Newtonsoft.Json.Linq;
 using IoPath = System.IO.Path;
 
 namespace AhoChatA.Reader
@@ -45,6 +49,15 @@ namespace AhoChatA.Reader
 
     public static class NovelAnalyzer
     {
+        // apibi.cc 的证书在部分国内 Android 环境不被信任；只对这一个主机放宽校验，
+        // 其它站点仍走 ReaderEngine 的标准证书校验。
+        private static readonly HttpClient _apibiHttp = new HttpClient(new HttpClientHandler
+        {
+            UseProxy = false,
+            ServerCertificateCustomValidationCallback = (req, cert, chain, errors) =>
+                req != null && req.RequestUri != null && IsApibiHost(req.RequestUri.Host)
+        }) { Timeout = TimeSpan.FromSeconds(30) };
+
         private const int MaxTocPages = 12;      // 通用目录最多自动翻 12 页，避免一次粘链接就抓几千页
         private const int MaxChapterPages = 12;  // 单章最多跟 12 个续页（如 0_2.html），避免误抓整本书
         private const int MinChapters = 2;       // 少于 2 章的“目录”基本是误判
@@ -61,13 +74,15 @@ namespace AhoChatA.Reader
             @"|\b[0-9]{1,6}\.html?$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
         private static readonly Regex NavTextRegex = new Regex(
-            @"^(下一页|下页|上一页|上页|首页|末页|更多|更多章节|查看更多|返回目录|目录|全部章节|完结|简介|书架|加入书架|版权|下载)$",
-            RegexOptions.Compiled);
+            @"^(下一页|下页|上一页|上页|首页|末页|更多|更多章节|查看更多|返回目录|目录|章节目录|全部章节|最新章节|最新九章|" +
+            @"完结|简介|详情|书架|加入书架|收藏|推荐|版权|下载|txt下载|全文阅读|免费阅读|开始阅读|立即阅读|在线阅读|手机阅读|电脑阅读)$",
+            RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
         private static readonly string[] ContentSelectors =
         {
-            // 笔趣阁类站点：#content 是整块面板，真正的正文在 #htmlContent
-            "#htmlContent", ".showtxt", ".read_text", ".txtbi",
+            // 笔趣阁类站点：桌面版正文在 #htmlContent；移动版正文在 #tts-content / #nr。
+            // 不能先命中外层面板，否则会把「字体/关灯/回目录/推荐」等按钮一起抓进来。
+            "#htmlContent", "#tts-content", "#nr", ".showtxt", ".read_text", ".txtbi",
             "#content", "#chaptercontent", "#chapter-content", "#bookcontent", "#article", "#articlecontent",
             ".chapter-content", ".chaptercontent", ".read-content", ".readcontent", ".content", ".article",
             ".neirong", ".text", ".post-content", "article", "main"
@@ -101,6 +116,11 @@ namespace AhoChatA.Reader
                 return result;
             }
 
+            // biquge.mom 的目录/正文由前端接口提供，HTML 里只有「正在打开这本书」。
+            int momId;
+            if (TryBiqugeMomId(url, out momId))
+                return await ParseBiqugeMomAsync(url, momId, progress).ConfigureAwait(false);
+
             Report(progress, L10n.T("正在匹配书源规则…"));
             var src = FindSource(url);
             // 只复用真正属于该站点的书源：有些用户书源用宽泛正则匹配到别的站，
@@ -127,6 +147,7 @@ namespace AhoChatA.Reader
                     var chapters = await engine.GetTocAsync(src, book).ConfigureAwait(false);
                     if (chapters != null && chapters.Count > 0)
                     {
+                        SortChapters(chapters);
                         result.Book = book;
                         result.Source = src;
                         result.Chapters = chapters;
@@ -174,6 +195,7 @@ namespace AhoChatA.Reader
                 result.Message = L10n.T("没有识别到章节链接；可尝试导入该书源规则后再解析");
                 return result;
             }
+            SortChapters(chapters2);
 
             book.TocUrl = url;
             book.Name = TitleFromHtml(html, url);
@@ -224,7 +246,236 @@ namespace AhoChatA.Reader
                 result.Chapters.Add(ch);
                 added++;
             }
+            if (added > 0) SortChapters(result.Chapters);
             return added;
+        }
+
+        /* ---------------- biquge.mom 接口解析 ---------------- */
+
+        private static bool IsApibiHost(string host)
+        {
+            return string.Equals(host, "apibi.cc", StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(host, "api.apibi.cc", StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(host, "www.apibi.cc", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool TryBiqugeMomId(string url, out int id)
+        {
+            id = 0;
+            try
+            {
+                Uri u;
+                if (!Uri.TryCreate(url ?? "", UriKind.Absolute, out u)) return false;
+                if (!string.Equals(u.Host, "www.biquge.mom", StringComparison.OrdinalIgnoreCase) &&
+                    !string.Equals(u.Host, "biquge.mom", StringComparison.OrdinalIgnoreCase)) return false;
+                var m = Regex.Match(u.Query, @"[?&]id=(\d+)", RegexOptions.IgnoreCase);
+                return m.Success && int.TryParse(m.Groups[1].Value, out id) && id > 0;
+            }
+            catch { return false; }
+        }
+
+        private static bool TryBiqugeMomChapter(string url, out int bookId, out int chapterId)
+        {
+            bookId = 0; chapterId = 0;
+            try
+            {
+                Uri u;
+                if (!Uri.TryCreate(url ?? "", UriKind.Absolute, out u)) return false;
+                if (!string.Equals(u.Host, "www.biquge.mom", StringComparison.OrdinalIgnoreCase) &&
+                    !string.Equals(u.Host, "biquge.mom", StringComparison.OrdinalIgnoreCase)) return false;
+                var a = Regex.Match(u.Query, @"[?&]novelId=(\d+)", RegexOptions.IgnoreCase);
+                var b = Regex.Match(u.Query, @"[?&]chapter=(\d+)", RegexOptions.IgnoreCase);
+                return a.Success && b.Success &&
+                       int.TryParse(a.Groups[1].Value, out bookId) &&
+                       int.TryParse(b.Groups[1].Value, out chapterId);
+            }
+            catch { return false; }
+        }
+
+        private static string ApibiToken(string jsonParams)
+        {
+            // apibi.cc 前端公开协议：md5('book@token.html') 前 16 位作 IV、后 16 位作 AES-128 key。
+            var key = Encoding.ASCII.GetBytes("a3dc22cf70418a51");
+            var iv = Encoding.ASCII.GetBytes("394c2c3202da6270");
+            var data = Encoding.UTF8.GetBytes(jsonParams);
+            using (var aes = Aes.Create())
+            {
+                aes.Key = key;
+                aes.IV = iv;
+                aes.Mode = CipherMode.CBC;
+                aes.Padding = PaddingMode.PKCS7;
+                using (var enc = aes.CreateEncryptor())
+                    return Convert.ToBase64String(enc.TransformFinalBlock(data, 0, data.Length));
+            }
+        }
+
+        private static async Task<string> ApibiGetAsync(string path, string jsonParams)
+        {
+            var token = Uri.EscapeDataString(ApibiToken(jsonParams));
+            var url = "https://api.apibi.cc/api/" + path + "?token=" + token;
+            try
+            {
+                return await _apibiHttp.GetStringAsync(url).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                Android.Util.Log.Warn("NovelParse", "apibi 请求失败 " + path + ": " + ex);
+                return "";
+            }
+        }
+
+        private static async Task<NovelParseResult> ParseBiqugeMomAsync(string url, int id, Action<string> progress)
+        {
+            var result = new NovelParseResult();
+            Report(progress, L10n.T("正在读取站点接口目录…"));
+            var raw = await ApibiGetAsync("booklist", "{\"id\":" + id + "}").ConfigureAwait(false);
+            JObject listJson = null;
+            try { listJson = JObject.Parse(raw); } catch { }
+            var arr = listJson == null ? null : listJson["list"] as JArray;
+            if (arr == null || arr.Count == 0)
+            {
+                result.Message = L10n.T("网页读取失败，请检查链接或网络");
+                return result;
+            }
+
+            var title = L10n.T("未命名书籍") + " " + id;
+            try
+            {
+                var infoRaw = await ApibiGetAsync("book", "{\"id\":" + id + "}").ConfigureAwait(false);
+                var info = JObject.Parse(infoRaw);
+                var t = info["title"] == null ? "" : info["title"].ToString().Trim();
+                if (t.Length > 0) title = t;
+            }
+            catch { }
+
+            var book = new Book
+            {
+                Type = "online",
+                Name = title,
+                BookUrl = url,
+                TocUrl = url,
+                SourceUrl = "https://www.biquge.mom/"
+            };
+            var chapters = new List<Chapter>();
+            for (int i = 0; i < arr.Count; i++)
+            {
+                var name = arr[i] == null ? "" : arr[i].ToString().Trim();
+                if (name.Length == 0) continue;
+                chapters.Add(new Chapter
+                {
+                    Index = chapters.Count,
+                    Title = name,
+                    Url = "https://www.biquge.mom/reader?novelId=" + id + "&chapter=" + (i + 1)
+                });
+            }
+            SortChapters(chapters);
+            result.Book = book;
+            result.Source = new BookSource
+            {
+                BookSourceName = "笔趣阁(mom)",
+                BookSourceUrl = "https://www.biquge.mom/",
+                Enabled = true
+            };
+            result.Chapters = chapters;
+            result.Message = L10n.T("通用解析成功");
+            return result;
+        }
+
+        /* ---------------- 章节排序 ---------------- */
+
+        /// <summary>按“第1章 / 第一章 / 第001章”排序；无章号时保持原顺序。</summary>
+        public static void SortChapters(List<Chapter> chapters)
+        {
+            if (chapters == null || chapters.Count < 2) return;
+            var keys = new List<int>();
+            int parsed = 0;
+            for (int i = 0; i < chapters.Count; i++)
+            {
+                int n;
+                keys.Add(TryChapterNumber(chapters[i] == null ? "" : chapters[i].Title, out n) ? n : i + 1);
+                if (TryChapterNumber(chapters[i] == null ? "" : chapters[i].Title, out n)) parsed++;
+            }
+            // 绝大多数标题都没有章号，就完全尊重站点原顺序。
+            if (parsed * 2 < chapters.Count) return;
+            var order = Enumerable.Range(0, chapters.Count).ToList();
+            order.Sort((a, b) =>
+            {
+                int c = keys[a].CompareTo(keys[b]);
+                return c != 0 ? c : a.CompareTo(b);
+            });
+            var sorted = new List<Chapter>(chapters.Count);
+            foreach (var i in order) sorted.Add(chapters[i]);
+            for (int i = 0; i < sorted.Count; i++)
+            {
+                sorted[i].Index = i;
+                chapters[i] = sorted[i];
+            }
+        }
+
+        private static bool TryChapterNumber(string title, out int number)
+        {
+            number = 0;
+            if (string.IsNullOrWhiteSpace(title)) return false;
+            var s = title.Replace('０', '0').Replace('１', '1').Replace('２', '2')
+                         .Replace('３', '3').Replace('４', '4').Replace('５', '5')
+                         .Replace('６', '6').Replace('７', '7').Replace('８', '8').Replace('９', '9');
+            var m = Regex.Match(s,
+                @"(?:第|chapter\s*)\s*([0-9一二三四五六七八九十百千万零两]+)",
+                RegexOptions.IgnoreCase);
+            if (!m.Success) m = Regex.Match(s, @"([0-9]{1,6})\s*[章节回卷部篇集话]");
+            if (!m.Success) return false;
+            var token = m.Groups[1].Value;
+            if (Regex.IsMatch(token, "^[0-9]+$")) return int.TryParse(token, out number) && number > 0;
+            number = ChineseNumber(token);
+            return number > 0;
+        }
+
+        private static int ChineseNumber(string s)
+        {
+            int total = 0, section = 0, num = 0;
+            foreach (var c in s)
+            {
+                int d = ChineseDigit(c);
+                if (d >= 0) { num = d; continue; }
+                if (c == '十' || c == '百' || c == '千')
+                {
+                    var unit = c == '十' ? 10 : (c == '百' ? 100 : 1000);
+                    section += (num == 0 ? 1 : num) * unit;
+                    num = 0;
+                }
+                else if (c == '万')
+                {
+                    section += num;
+                    total += (section == 0 ? 1 : section) * 10000;
+                    section = 0; num = 0;
+                }
+                else if (c == '亿')
+                {
+                    section += num;
+                    total += (section == 0 ? 1 : section) * 100000000;
+                    section = 0; num = 0;
+                }
+            }
+            return total + section + num;
+        }
+
+        private static int ChineseDigit(char c)
+        {
+            switch (c)
+            {
+                case '零': return 0;
+                case '一': return 1;
+                case '二': return 2;
+                case '两': return 2;
+                case '三': return 3;
+                case '四': return 4;
+                case '五': return 5;
+                case '六': return 6;
+                case '七': return 7;
+                case '八': return 8;
+                case '九': return 9;
+                default: return -1;
+            }
         }
 
         /* ---------------- 书源匹配 ---------------- */
@@ -286,8 +537,7 @@ namespace AhoChatA.Reader
             nextUrl = "";
             var list = new List<Chapter>();
             if (string.IsNullOrWhiteSpace(html)) return list;
-            var doc = new HtmlDocument();
-            doc.LoadHtml(html);
+            var doc = LoadDoc(html);
             var anchors = doc.DocumentNode.SelectNodes("//a[@href]");
             if (anchors == null) return list;
 
@@ -327,7 +577,22 @@ namespace AhoChatA.Reader
             if (best == null) return list;
 
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var chosen = new Dictionary<string, Candidate>(StringComparer.OrdinalIgnoreCase);
             foreach (var c in best.OrderBy(x => x.Order))
+            {
+                Candidate old;
+                if (!chosen.TryGetValue(c.Url, out old))
+                {
+                    chosen[c.Url] = c;
+                    continue;
+                }
+                // 同一章 URL 常被「开始阅读/免费阅读/最新九章」重复引用：
+                // 优先保留真正带章号的标题，否则第一章会被按钮文案占用。
+                var oldNumbered = ChapterTitleRegex.IsMatch(old.Title ?? "");
+                var newNumbered = ChapterTitleRegex.IsMatch(c.Title ?? "");
+                if (newNumbered && !oldNumbered) chosen[c.Url] = c;
+            }
+            foreach (var c in chosen.Values.OrderBy(x => x.Order))
             {
                 if (!seen.Add(c.Url)) continue;
                 list.Add(new Chapter
@@ -369,8 +634,7 @@ namespace AhoChatA.Reader
         {
             try
             {
-                var doc = new HtmlDocument();
-                doc.LoadHtml(html);
+                var doc = LoadDoc(html);
                 Uri baseUri;
                 if (!Uri.TryCreate(baseUrl, UriKind.Absolute, out baseUri)) return "";
                 var anchors = doc.DocumentNode.SelectNodes("//a[@href]");
@@ -394,8 +658,7 @@ namespace AhoChatA.Reader
         {
             try
             {
-                var doc = new HtmlDocument();
-                doc.LoadHtml(html);
+                var doc = LoadDoc(html);
                 var metas = doc.DocumentNode.SelectNodes("//meta");
                 if (metas != null)
                 {
@@ -435,6 +698,19 @@ namespace AhoChatA.Reader
             return HtmlEntity.DeEntitize(Regex.Replace(s, @"\s+", " ")).Trim();
         }
 
+        /// <summary>
+        /// HtmlAgilityPack 会按 meta charset 再取一次 Encoding；Android Mono 缺 GBK 代码页会抛异常。
+        /// 这里文本已经由 EncodingEx 解码过，统一把 meta charset 改成 utf-8 再交给 HAP。
+        /// </summary>
+        private static HtmlDocument LoadDoc(string html)
+        {
+            var safe = Regex.Replace(html ?? "", @"(charset\s*=\s*)([""']?)[a-z0-9_-]+\2",
+                "${1}\"utf-8\"", RegexOptions.IgnoreCase);
+            var doc = new HtmlDocument();
+            doc.LoadHtml(safe);
+            return doc;
+        }
+
         /* ---------------- 正文 ---------------- */
 
         /// <summary>
@@ -443,6 +719,25 @@ namespace AhoChatA.Reader
         public static async Task<string> ChapterTextAsync(BookSource src, Chapter ch)
         {
             if (ch == null || string.IsNullOrEmpty(ch.Url)) return "";
+
+            // biquge.mom 的正文是接口返回的整章纯文本，没有分页。
+            int momBook, momChapter;
+            if (TryBiqugeMomChapter(ch.Url, out momBook, out momChapter))
+            {
+                try
+                {
+                    var raw = await ApibiGetAsync("chapter",
+                        "{\"id\":" + momBook + ",\"chapterid\":" + momChapter + "}").ConfigureAwait(false);
+                    var json = JObject.Parse(raw);
+                    var momText = json["txt"] == null ? "" : json["txt"].ToString();
+                    if (!string.IsNullOrWhiteSpace(momText)) return AnalyzeRule.CleanBlock(momText);
+                }
+                catch (Exception ex)
+                {
+                    Android.Util.Log.Warn("NovelParse", "mom 章节接口失败: " + ex.Message);
+                }
+            }
+
             var engine = ReaderLibrary.Engine;
             if (src != null && src.ContentRule != null &&
                 !string.IsNullOrWhiteSpace(src.ContentRule.Content))
@@ -468,9 +763,18 @@ namespace AhoChatA.Reader
                 var html = await engine.FetchAsync(current, headers).ConfigureAwait(false);
                 if (string.IsNullOrWhiteSpace(html)) break;
 
-                var doc = new HtmlDocument();
-                doc.LoadHtml(html);
+                var doc = LoadDoc(html);
                 var next = FindChapterContinuationUrl(doc, current);
+                // piquge 把后半章正文放在 JS 解密后的 #morecontent；静态文本里只是占位提示。
+                var moreHtml = current != null && current.IndexOf("piquge.com", StringComparison.OrdinalIgnoreCase) >= 0
+                    ? DecryptPiqugeMore(html)
+                    : "";
+                var more = doc.DocumentNode.SelectNodes("//*[@id='morecontent']");
+                if (more != null) foreach (var n in more)
+                {
+                    if (!string.IsNullOrEmpty(moreHtml)) n.InnerHtml = moreHtml;
+                    else n.Remove();
+                }
                 var junk = doc.DocumentNode.SelectNodes("//script|//style|//nav|//header|//footer|//aside|//form|//iframe|//svg|//select|//option|//button");
                 if (junk != null) foreach (var n in junk) n.Remove();
 
@@ -500,48 +804,154 @@ namespace AhoChatA.Reader
             if (htmlParts.Count == 0) return "";
             var text = BookParser.HtmlToText(string.Join("\n", htmlParts.ToArray()));
             // 去掉常见的“上一章/下一章/目录”导航尾巴
-            text = Regex.Replace(text, @"(?m)^\s*(上一章|下一章|上一页|下一页|返回目录|加入书签|目录)\s*[：:]?.*$", "");
+            text = Regex.Replace(text, @"(?m)^\s*(上一章|下一章|上一页|下一页|返回目录|加入书签|目录|本章未完.*|更多内容加载中.*|本站只支持手机浏览器访问.*)\s*[：:]?.*$", "");
             return AnalyzeRule.CleanBlock(text);
         }
 
-        /// <summary>只识别同一章的分页续页（0.html → 0_2.html），不把下一章当成续页。</summary>
+        /// <summary>
+        /// 只识别同一章的分页续页：0.html → 0_2.html，或同路径 ?page=1 → ?page=2。
+        /// 不靠“下一页/下一章”文案判断，避免把下一章当成续页。
+        /// </summary>
         private static string FindChapterContinuationUrl(HtmlDocument doc, string chapterUrl)
         {
             try
             {
                 Uri current;
                 if (!Uri.TryCreate(chapterUrl, UriKind.Absolute, out current)) return "";
+
                 var currentName = Uri.UnescapeDataString(IoPath.GetFileName(current.AbsolutePath));
                 var currentBase = Regex.Replace(currentName, @"\.(html?|htm)$", "", RegexOptions.IgnoreCase);
                 var suffix = Regex.Match(currentBase, @"_(?<n>\d+)$");
                 var stem = suffix.Success ? currentBase.Substring(0, suffix.Index) : currentBase;
                 int pageNo = suffix.Success ? int.Parse(suffix.Groups["n"].Value) : 1;
-                var dir = current.AbsoluteUri.Substring(0, current.AbsoluteUri.Length - currentName.Length);
+                var dir = current.AbsolutePath.Substring(0, current.AbsolutePath.Length - currentName.Length);
+                int curQueryPage;
+                string curRestQuery;
+                ReadPageQuery(current, out curQueryPage, out curRestQuery);
 
                 var anchors = doc.DocumentNode.SelectNodes("//a[@href]");
                 if (anchors == null) return "";
                 foreach (var a in anchors)
                 {
                     var href = (a.GetAttributeValue("href", "") ?? "").Trim();
-                    if (href.Length == 0 || href.StartsWith("#") ||
-                        href.StartsWith("javascript:", StringComparison.OrdinalIgnoreCase)) continue;
-                    // 不靠“下一页/下一章”文案判断：该站把同章续页也写成“下一章”。
-                    // 只要 href 是同章 stem_N.html 且 N 递增，就一定是续页；下一章 1.html 不会匹配。
+                    if (IsPlaceholderHref(href))
+                    {
+                        // piquge 的「下一页」用 onclick="location.href='/802/.../1_2.html'"。
+                        var jsUrl = ExtractLocationFromJs(a.GetAttributeValue("onclick", ""));
+                        if (!string.IsNullOrEmpty(jsUrl)) href = jsUrl;
+                        else
+                        {
+                            var dataUrl = (a.GetAttributeValue("data-href", "") ?? "").Trim();
+                            if (string.IsNullOrEmpty(dataUrl))
+                                dataUrl = (a.GetAttributeValue("data-url", "") ?? "").Trim();
+                            if (!string.IsNullOrEmpty(dataUrl)) href = dataUrl;
+                        }
+                    }
+                    if (IsPlaceholderHref(href)) continue;
+
                     Uri next;
                     if (!Uri.TryCreate(current, href, out next)) continue;
+                    if (!string.Equals(next.Host, current.Host, StringComparison.OrdinalIgnoreCase)) continue;
+
+                    // 查询参数分页：同一路径，只有 page/p/read/cpage/section 递增
+                    if (string.Equals(next.AbsolutePath, current.AbsolutePath, StringComparison.OrdinalIgnoreCase))
+                    {
+                        int nq;
+                        string rest;
+                        if (ReadPageQuery(next, out nq, out rest) && nq > curQueryPage &&
+                            string.Equals(rest, curRestQuery, StringComparison.OrdinalIgnoreCase))
+                            return next.AbsoluteUri;
+                        continue;
+                    }
+
+                    // 路径分页：同目录同章 stem_N.html
                     var nextName = Uri.UnescapeDataString(IoPath.GetFileName(next.AbsolutePath));
                     var nextBase = Regex.Replace(nextName, @"\.(html?|htm)$", "", RegexOptions.IgnoreCase);
                     var m = Regex.Match(nextBase, @"^" + Regex.Escape(stem) + @"_(?<n>\d+)$");
                     if (!m.Success) continue;
                     int n;
                     if (!int.TryParse(m.Groups["n"].Value, out n) || n <= pageNo) continue;
-                    var nextDir = next.AbsoluteUri.Substring(0, next.AbsoluteUri.Length - nextName.Length);
+                    var nextDir = next.AbsolutePath.Substring(0, next.AbsolutePath.Length - nextName.Length);
                     if (!string.Equals(nextDir, dir, StringComparison.OrdinalIgnoreCase)) continue;
                     return next.AbsoluteUri;
                 }
             }
             catch { }
             return "";
+        }
+
+        /// <summary>
+        /// piquge.com 把后半章正文放进 var c="..."，页面脚本解密后替换 #morecontent。
+        /// 这里复刻它的 base64 规则，避免只下载到静态首屏。
+        /// </summary>
+        private static string DecryptPiqugeMore(string html)
+        {
+            try
+            {
+                var m = Regex.Match(html ?? "", @"var\s+c\s*=\s*""([A-Za-z0-9+/=_-]{200,})""",
+                    RegexOptions.IgnoreCase);
+                if (!m.Success) return "";
+                var raw = Convert.FromBase64String(StandardBase64(m.Groups[1].Value));
+                if (raw.Length < 14) return "";
+                int n;
+                if (!int.TryParse(Encoding.ASCII.GetString(raw, 8, 3), out n) || n < 100 || n > 999) return "";
+                var start = 11 + n;
+                var end = raw.Length - n;
+                if (end <= start) return "";
+                var inner = Encoding.ASCII.GetString(raw, start, end - start);
+                // 站点脚本用这两个片段替代 URL-safe base64 的字符，拼出真正的标准 base64。
+                inner = inner.Replace("-", "PHA+").Replace("_", "8L3A+");
+                return Encoding.UTF8.GetString(Convert.FromBase64String(StandardBase64(inner)));
+            }
+            catch { return ""; }
+        }
+
+        private static string StandardBase64(string s)
+        {
+            var t = (s ?? "").Replace('-', '+').Replace('_', '/');
+            var pad = (4 - t.Length % 4) % 4;
+            return pad == 0 ? t : t + new string('=', pad);
+        }
+
+        private static bool IsPlaceholderHref(string href)
+        {
+            if (string.IsNullOrWhiteSpace(href)) return true;
+            var s = href.Trim();
+            return s.StartsWith("#") ||
+                   s.StartsWith("javascript:", StringComparison.OrdinalIgnoreCase) ||
+                   s.StartsWith("mailto:", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string ExtractLocationFromJs(string js)
+        {
+            if (string.IsNullOrEmpty(js)) return "";
+            var m = Regex.Match(js,
+                @"(?:window\.)?location(?:\.href)?\s*=\s*(['\""'])([^'\""']+)\1",
+                RegexOptions.IgnoreCase);
+            return m.Success ? m.Groups[2].Value.Trim() : "";
+        }
+
+        private static bool ReadPageQuery(Uri u, out int page, out string rest)
+        {
+            page = 1;
+            rest = "";
+            if (u == null || string.IsNullOrEmpty(u.Query)) return false;
+            var parts = u.Query.TrimStart('?').Split('&');
+            var others = new List<string>();
+            bool found = false;
+            foreach (var part in parts)
+            {
+                var m = Regex.Match(part, @"^(?:page|p|read|cpage|section)=(\d+)$", RegexOptions.IgnoreCase);
+                if (m.Success && !found)
+                {
+                    found = int.TryParse(m.Groups[1].Value, out page) && page > 0;
+                    if (!found) page = 1;
+                }
+                else others.Add(part);
+            }
+            others.Sort(StringComparer.OrdinalIgnoreCase);
+            rest = string.Join("&", others.ToArray());
+            return found;
         }
 
         private static void Report(Action<string> progress, string msg)
