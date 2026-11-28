@@ -238,6 +238,20 @@ namespace AhoChatA
             set { _largeTitle.Visibility = value ? ViewStates.Visible : ViewStates.Gone; }
         }
 
+        /// <summary>是否显示紧凑标题（大标题页可关闭，避免同一标题出现两次）。</summary>
+        public bool ShowCompactTitle
+        {
+            get { return _title.Visibility == ViewStates.Visible; }
+            set { _title.Visibility = value ? ViewStates.Visible : ViewStates.Gone; }
+        }
+
+        /// <summary>是否显示返回箭头（根页面可关闭）。</summary>
+        public bool ShowBackButton
+        {
+            get { return _back.Visibility == ViewStates.Visible; }
+            set { _back.Visibility = value ? ViewStates.Visible : ViewStates.Gone; }
+        }
+
         public LinearLayout Actions { get { return _actions; } }
 
         public IosNavBar(Context context, string title) : base(context)

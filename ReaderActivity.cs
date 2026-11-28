@@ -369,17 +369,18 @@ namespace AhoChatA
                 ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.MatchParent);
 
             var header = new LinearLayout(this) { Orientation = Orientation.Vertical };
-            header.SetPadding(Dp(16), Dp(8), Dp(16), Dp(4));
+            header.SetPadding(0, 0, 0, Dp(4));
+
+            // iOS 原生大标题导航栏：大标题「书架」+ 右侧动作胶囊
+            var nav = new IosNavBar(this, L10n.T("书架"));
+            nav.ShowCompactTitle = false;   // 大标题已显示，避免重复
+            nav.ShowBackButton = false;     // 书架是阅读模块根页面，不显示返回
+            nav.Actions.AddView(Pill(L10n.T("解析"), v => OpenExplore()));
+            header.AddView(nav);
 
             var row = new LinearLayout(this) { Orientation = Orientation.Horizontal };
             row.SetGravity(GravityFlags.CenterVertical);
-
-            var title = new TextView(this) { Text = L10n.T("书架"), TextSize = 22 };
-            title.SetTextColor(new Color(TextMain));
-            title.SetTypeface(Typeface.Default, TypefaceStyle.Bold);
-            row.AddView(title, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WrapContent, 1f));
-
-            row.AddView(Pill(L10n.T("解析"), v => OpenExplore()));
+            row.SetPadding(Dp(16), Dp(4), Dp(16), 0);
             row.AddView(Pill(L10n.T("搜索"), OnSearch));
             row.AddView(Pill(L10n.T("导入"), OnImport));
             row.AddView(Pill(L10n.T("书源"), OnManageSources));
@@ -3761,29 +3762,19 @@ namespace AhoChatA
             _explorePage.LayoutParameters = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.MatchParent);
 
-            var head = new LinearLayout(this) { Orientation = Orientation.Horizontal };
-            head.SetGravity(GravityFlags.CenterVertical);
-            head.SetPadding(Dp(16), 0, Dp(16), 0);
-            head.LayoutParameters = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, Dp(56));
-
-            var back = new TextView(this) { Text = "‹", TextSize = 26 };
-            back.SetTextColor(new Color(TextMain));
-            back.Gravity = GravityFlags.Center;
-            back.SetPadding(Dp(10), 0, Dp(10), 0);
-            back.Click += (s, e) => CloseExplore();
-            head.AddView(back, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WrapContent, ViewGroup.LayoutParams.WrapContent));
-
-            var t = new TextView(this) { Text = L10n.T("解析"), TextSize = 20 };
-            t.SetTextColor(new Color(TextMain));
-            t.SetTypeface(Typeface.Default, TypefaceStyle.Bold);
-            head.AddView(t, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WrapContent, 1f));
-
+            // iOS 原生导航栏：返回箭头 + 标题 + 右侧状态；大标题交给正文区，避免占两行。
+            var head = new IosNavBar(this, L10n.T("解析"));
+            head.ShowLargeTitle = false;
+            head.BackClicked += (s, e) => CloseExplore();
             _exTitle = new TextView(this) { Text = "", TextSize = 11.5f };
             _exTitle.SetTextColor(new Color(TextSub));
             _exTitle.SetMaxLines(1);
             _exTitle.Ellipsize = Android.Text.TextUtils.TruncateAt.End;
-            head.AddView(_exTitle, new LinearLayout.LayoutParams(Dp(150), ViewGroup.LayoutParams.WrapContent));
+            _exTitle.LayoutParameters = new LinearLayout.LayoutParams(Dp(150), ViewGroup.LayoutParams.WrapContent)
+            {
+                RightMargin = Dp(8)
+            };
+            head.Actions.AddView(_exTitle);
             _explorePage.AddView(head);
 
             _exBody = new LinearLayout(this) { Orientation = Orientation.Vertical };
