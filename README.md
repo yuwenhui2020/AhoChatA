@@ -171,6 +171,12 @@ docs/screenshots/        screenshots used by this README
 
 ### Changelog
 
+**1.0.3**
+- Shelf "Parse" downloads online novels chapter by chapter, with support for multiple Biquge sites, paginated TOC/content and chapter previews; parsed and searched books are added to the shelf by default with real cover art.
+- Downloaded reading files now offer "Add to Shelf / Read Now" instead of "Open File"; downloaded music, photos and videos are automatically registered in the local media library.
+- Built-in browser long-press now shows one unified menu: tab actions, download/copy link/share, copy/search text and hide element; fixed the ad-rule selector targeting bug.
+- Further iOS-native refinements across music, reader, video and shared UI, plus bookshelf button alignment and subtitle inset fixes.
+
 **1.0.2**
 - Fixed chat channels, language switching and slow splash startup.
 - Built-in browser ad blocking is now off by default; manual enabling and existing preferences are preserved.
