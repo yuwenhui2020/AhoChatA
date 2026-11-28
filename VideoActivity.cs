@@ -341,8 +341,6 @@ namespace AhoChatA
             _tCur = SmallTime("00:00");
             _tTotal = SmallTime("00:00");
             _seek = new SeekBar(this);
-            // iOS 风格：细轨道 + 白色圆形滑块，替换默认 Material 粗横条
-            StyleIosSeek(_seek);
             _seek.LayoutParameters = new LinearLayout.LayoutParams(0, -2, 1f);
             _seek.ProgressChanged += (s, e) =>
             {
@@ -575,34 +573,6 @@ namespace AhoChatA
             d.SetColor(color);
             d.SetCornerRadius(Dp(radiusDp));
             return d;
-        }
-
-        /// <summary>iOS 风格进度条：2dp 半透明轨道 + 已播蓝色 + 白色圆点滑块。</summary>
-        private void StyleIosSeek(SeekBar seek)
-        {
-            if (seek == null) return;
-            try
-            {
-                // 轨道背景 + 已播进度，用 LayerDrawable 叠放（seekbar 只有 ProgressDrawable 属性）
-                var track = IosStyle.Rounded(this, unchecked((int)0x66FFFFFF), 1);
-                var fill = IosStyle.Rounded(this, unchecked((int)0xFF007AFF), 1);
-                var clip = new ClipDrawable(fill, GravityFlags.Start, ClipDrawableOrientation.Horizontal);
-                var layers = new LayerDrawable(new Drawable[] { track, clip });
-                layers.SetId(0, Android.Resource.Id.Background);
-                layers.SetId(1, Android.Resource.Id.Progress);
-                seek.ProgressDrawable = layers;
-
-                var thumb = new GradientDrawable();
-                thumb.SetColor(Color.White.ToArgb());
-                thumb.SetShape(ShapeType.Oval);
-                thumb.SetSize(IosStyle.Dp(this, 14), IosStyle.Dp(this, 14));
-                seek.SetThumb(thumb);
-                seek.ThumbOffset = IosStyle.Dp(this, 3);
-            }
-            catch (Exception ex)
-            {
-                Android.Util.Log.Warn("MchatVod", "iOS 进度条样式失败: " + ex.Message);
-            }
         }
 
         /* ============================================================

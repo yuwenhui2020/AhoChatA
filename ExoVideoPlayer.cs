@@ -33,10 +33,6 @@ namespace AhoChatA
         readonly Java.Lang.Runnable _poll;
         bool _prepared, _ended, _errored, _pollRunning;
         int _pendingResume;
-        // 失败自动重试一次：本地缓存代理偶发异常时，绕开代理直连原地址。
-        string _lastUrl;
-        bool? _lastHls;
-        int _retryCount;
 
         public event EventHandler Prepared;
         public event EventHandler Completion;
@@ -79,13 +75,6 @@ namespace AhoChatA
         public void Load(string url, long resumeMs, bool? hlsHint = null)
         {
             if (_p == null) { _errored = true; Error?.Invoke(this, EventArgs.Empty); return; }
-            _lastUrl = url; _lastHls = hlsHint; _retryCount = 0;
-            PrepareSource(url, resumeMs, hlsHint, true);
-        }
-
-        /// <summary>真正建源；useProxy=false 时绕开本地缓存代理直连原地址（失败重试用）。</summary>
-        private void PrepareSource(string url, long resumeMs, bool? hlsHint, bool useProxy)
-        {
             _prepared = false; _ended = false; _errored = false; _pendingResume = (int)resumeMs;
             try
             {
@@ -95,18 +84,18 @@ namespace AhoChatA
                     origLow.Contains("://127.0.0.1") || origLow.Contains("://localhost");
                 string finalUrl = url;
                 // 远端直链走本地回环缓存代理：多线程落盘缓冲 + 精确字节统计（遥测用）。
-                // 失败重试（useProxy=false）或代理不可用时直连原地址。
-                if (useProxy && !localLike && origLow.StartsWith("http") && VideoCacheProxy.Instance.Enabled)
+                // 本地 file:// 与已是回环地址的不代理。代理不可用时 ProxyPlayUrl 返回原地址降级直连。
+                if (!localLike && origLow.StartsWith("http") && VideoCacheProxy.Instance.Enabled)
                     finalUrl = VideoCacheProxy.ProxyPlayUrl(url);
                 if (localLike && !url.Contains("://")) finalUrl = "file://" + url;
 
+                // 统一用带浏览器 UA + 跨协议重定向的 HTTP 数据源（本地 file:// 不受影响）
                 var plain = new DefaultDataSource.Factory(_ctx, VodExoCache.HttpFactory());
                 var uri = Android.Net.Uri.Parse(finalUrl);
                 IMediaSource src = isHls
                     ? new HlsMediaSource.Factory(plain).SetAllowChunklessPreparation(true).CreateMediaSource(uri)
                     : new ProgressiveMediaSource.Factory(plain).CreateMediaSource(uri);
 
-                _p.Stop();
                 _p.SetMediaSource(src);
                 _p.Prepare();
                 _p.PlayWhenReady = true;
@@ -139,15 +128,7 @@ namespace AhoChatA
                     else if (_p.PlayerError != null && !_errored)
                     {
                         _errored = true;
-                        // 第一次失败：绕开本地缓存代理直连原地址重试，不打扰用户；
-                        // 第二次仍失败才上报，由 Activity 给出明确提示。
-                        if (_retryCount < 1 && !string.IsNullOrEmpty(_lastUrl))
-                        {
-                            _retryCount++;
-                            Android.Util.Log.Info("MchatVod", "播放失败，绕开缓存代理重试：" + _lastUrl);
-                            PrepareSource(_lastUrl, _pendingResume > 0 ? _pendingResume : 0, _lastHls, false);
-                        }
-                        else Error?.Invoke(this, EventArgs.Empty);
+                        Error?.Invoke(this, EventArgs.Empty);
                     }
                     else if (_p.PlaybackState == StateEnded && !_ended)
                     {
