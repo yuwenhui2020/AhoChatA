@@ -153,6 +153,7 @@
     <Compile Include="ReaderFonts.cs" />
     <Compile Include="ThemeEngine.cs" />
     <Compile Include="IosStyle.cs" />
+    <Compile Include="IosComponents.cs" />
     <Compile Include="Warmup.cs" />
     <Compile Include="PrivacyActivity.cs" />
     <Compile Include="AcknowledgementsActivity.cs" />

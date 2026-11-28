@@ -598,10 +598,10 @@ namespace AhoChatA.Music
             // 看门狗：超时即认为这个源不可用，交给外层换源。
             // 同步听跟随端用更短的 6 秒，避免「缓冲中…」一直挂着不动。
             int watchdog = SuppressAutoAdvance ? 6000 : 10000;
-            var done = await Task.WhenAny(tcs.Task, Task.Delay(watchdog));
+            var done = await Task.WhenAny(tcs.Task, Task.Delay(watchdog)).ConfigureAwait(false);
             if (done != tcs.Task) { Info("prepare timeout: " + src); return false; }
             bool ok;
-            try { ok = tcs.Task.Result; } catch { ok = false; }
+            try { ok = await tcs.Task.ConfigureAwait(false); } catch { ok = false; }
             return ok;
         }
 

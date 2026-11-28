@@ -87,7 +87,7 @@ namespace AhoChatA
         private int _section;
         private string _query = "";
         private EditText _search;
-        private LinearLayout _navRow, _navSeg;
+        private IosSegmentedControl _navSeg;
         private LinearLayout _entryBack;   // 从阅读页跳进来时顶部显示的「返回阅读」
         private LinearLayout _musicSubBar;
         private TextView _subSongs, _subPlaylists, _subFavorites;
@@ -104,7 +104,6 @@ namespace AhoChatA
         };
         private static readonly Dictionary<string, Bitmap> _onlineCoverCache =
             new Dictionary<string, Bitmap>(StringComparer.OrdinalIgnoreCase);
-        private readonly List<TextView> _navBtns = new List<TextView>();
         private GridView _grid;
         private VideoGridAdapter _gridAdapter;
 
@@ -292,18 +291,27 @@ namespace AhoChatA
             _entryBack.AddView(entryTip);
             page.AddView(_entryBack);
 
-            // 分区导航（iOS 分段控件 segmented control 风格）：音乐 / 视频 / 图片 / 设置
-            // 原「影音」大标题栏已移除；歌单/喜欢并入「音乐」栏目；目录/刷新/网络收进「设置」浮窗。
-            _navSeg = new LinearLayout(this) { Orientation = Orientation.Horizontal };
-            _navSeg.SetPadding(Dp(3), Dp(2), Dp(3), Dp(2));
-            _navSeg.Background = RoundBg(unchecked((int)0xFFE3E3E8), 10);
+            // 分区导航：iOS 原生分段控件（音乐 / 视频 / 图片）+ 右侧设置图标
+            // 歌单/喜欢并入「音乐」栏目；目录/刷新/网络收进「设置」浮窗。
+            var navWrap = new LinearLayout(this) { Orientation = Orientation.Horizontal };
+            navWrap.SetGravity(GravityFlags.CenterVertical);
+            navWrap.SetPadding(Dp(12), Dp(4), Dp(12), Dp(2));
 
-            _navRow = new LinearLayout(this) { Orientation = Orientation.Horizontal };
-            _navRow.SetPadding(Dp(12), Dp(6), Dp(12), Dp(3));
-            AddNav(L10n.T("音乐"), SecAudio); AddNav(L10n.T("视频"), SecVideo); AddNav(L10n.T("图片"), SecPhoto);
-            AddActionNav(L10n.T("设置"), ShowSettingsMenu);
-            _navSeg.AddView(_navRow, new LinearLayout.LayoutParams(-1, -2));
-            page.AddView(_navSeg);
+            _navSeg = new IosSegmentedControl(this);
+            _navSeg.LayoutParameters = new LinearLayout.LayoutParams(0, Dp(36), 1f);
+            _navSeg.SetItems(new[] { L10n.T("音乐"), L10n.T("视频"), L10n.T("图片") });
+            _navSeg.SelectionChanged += (s, idx) =>
+            {
+                if (idx == 0) SetSection(SecAudio);
+                else if (idx == 1) SetSection(SecVideo);
+                else if (idx == 2) SetSection(SecPhoto);
+            };
+            navWrap.AddView(_navSeg);
+
+            var settingsIcon = new IconView(this, IconKind.Settings) { IconColor = Accent, Thickness = 1.7f };
+            settingsIcon.Click += (s, e) => { try { ShowSettingsMenu(); } catch { } };
+            navWrap.AddView(settingsIcon, new LinearLayout.LayoutParams(Dp(34), Dp(34)) { LeftMargin = Dp(8) });
+            page.AddView(navWrap);
 
             // 音乐栏目内的子切换：歌曲 / 歌单 / 喜欢（节省顶栏空间）
             _musicSubBar = new LinearLayout(this) { Orientation = Orientation.Horizontal };
@@ -567,30 +575,6 @@ namespace AhoChatA
             return page;
         }
 
-        /// <summary>分区导航按钮（参考 Jellyfin 媒体库顶部导航）。</summary>
-        private void AddNav(string text, int section)
-        {
-            var t = new TextView(this) { Text = text, TextSize = 13, Gravity = GravityFlags.Center };
-            t.SetTypeface(null, TypefaceStyle.Bold);
-            t.SetPadding(Dp(4), Dp(5), Dp(4), Dp(5));
-            t.LayoutParameters = new LinearLayout.LayoutParams(0, -2, 1f) { LeftMargin = Dp(2), RightMargin = Dp(2) };
-            t.Click += (s, e) => SetSection(section);
-            _navBtns.Add(t);
-            _navRow.AddView(t);
-        }
-
-        /// <summary>动作型导航按钮（如「设置」）：不切换栏目，只弹浮窗。</summary>
-        private void AddActionNav(string text, Action onClick)
-        {
-            var t = new TextView(this) { Text = text, TextSize = 13, Gravity = GravityFlags.Center };
-            t.SetTypeface(null, TypefaceStyle.Bold);
-            t.SetPadding(Dp(4), Dp(5), Dp(4), Dp(5));
-            t.LayoutParameters = new LinearLayout.LayoutParams(0, -2, 1f) { LeftMargin = Dp(2), RightMargin = Dp(2) };
-            t.Click += (s, e) => { try { onClick(); } catch { } };
-            _navBtns.Add(t);
-            _navRow.AddView(t);
-        }
-
         /// <summary>「设置」浮窗：目录设置 / 刷新媒体库 / 打开网络音乐页 / 一起听开关。</summary>
         private void ShowSettingsMenu()
         {
@@ -674,26 +658,8 @@ namespace AhoChatA
 
         private void SyncNav()
         {
-            for (int i = 0; i < _navBtns.Count; i++)
-            {
-                bool on = i == NavIndexOf(_section);
-                var t = _navBtns[i];
-                t.SetTextColor(new Color(on ? TextMain : TextSub));
-                // 选中项：白色胶囊 + 轻阴影（iOS segmented control）
-                if (on)
-                {
-                    var d = new GradientDrawable();
-                    d.SetColor(White);
-                    d.SetCornerRadius(Dp(8));
-                    t.Background = d;
-                    t.Elevation = Dp(1);
-                }
-                else
-                {
-                    t.Background = RoundBg(unchecked((int)0x00FFFFFF), 8);
-                    t.Elevation = 0;
-                }
-            }
+            if (_navSeg != null)
+                _navSeg.SelectedIndex = NavIndexOf(_section);
         }
 
         /// <summary>当前分区要显示的条目（含搜索过滤）。</summary>

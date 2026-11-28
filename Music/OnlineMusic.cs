@@ -830,64 +830,111 @@ namespace AhoChatA.Music
                 try { Directory.CreateDirectory(dir); } catch { }
                 string baseName = string.IsNullOrWhiteSpace(name) ? s.FileName : MakeFileName(name, "");
                 if (string.IsNullOrWhiteSpace(baseName)) baseName = "online_" + MusicLibrary.Hash(s.Id ?? DateTime.Now.Ticks.ToString());
-                var data = await HttpGetBytes(url);
-                if (data == null || data.Length < 1024) return null;
-                // 以文件头判定真实格式：无损音源返回 flac 时不能再存成 .mp3，
-                // 否则播放器与媒体库会按错误编码解析。
-                string audioExt = AudioExt(data) ?? ".mp3";
-                string dest = IoPath.Combine(dir, baseName + audioExt);
-                int n = 1;
-                while (File.Exists(dest))
-                    dest = IoPath.Combine(dir, baseName + "_" + (++n) + audioExt);
-                File.WriteAllBytes(dest, data);
 
-                // 封面 / 歌词：直接复用 App 播放时获取封面与歌词的那套逻辑（FetchCoverAsync / FetchLyricsAsync），
-                // 而不是另走「从歌曲源直连硬拉」的失败路径，保证下载到的三件套与播放时完全一致。
+                // 流式落盘：整首歌（无损可达几十 MB）不再一次性 ReadAsByteArrayAsync 驻留内存，
+                // 改成边下边写到临时文件，只把文件头 12 字节读进内存判格式，避免 OOM。
+                var temp = IoPath.Combine(dir, "dl_" + Guid.NewGuid().ToString("N") + ".part");
                 try
                 {
-                    var meta = new Song
-                    {
-                        IsOnline = true,
-                        OnlinePlat = s.Plat,
-                        OnlineId = s.Id,
-                        OnlineHqId = s.HqId,
-                        OnlineSqId = s.SqId,
-                        OnlineCover = s.Cover,
-                        Title = string.IsNullOrEmpty(s.Title) ? name : s.Title,
-                        Artist = s.Artist,
-                        Album = s.Album,
-                        DurationMs = s.DurationMs,
-                    };
-                    // 封面：与播放同逻辑的 FetchCoverAsync（落盘到缓存后复制到下载目录，按同名匹配）
-                    var coverLocal = await FetchCoverAsync(meta);
-                    if (!string.IsNullOrEmpty(coverLocal) && File.Exists(coverLocal))
-                    {
-                        byte[] cb = File.ReadAllBytes(coverLocal);
-                        string ext = ImageExt(cb);
-                        if (string.IsNullOrEmpty(ext)) ext = "jpg";
-                        File.Copy(coverLocal, IoPath.Combine(dir, baseName + "." + ext), true);
-                    }
-                    // 歌词：与播放同逻辑的 FetchLyricsAsync；若全局歌词开关关闭导致为空，再强制抓取一次
-                    var lrcLocal = await FetchLyricsAsync(meta);
-                    if (string.IsNullOrEmpty(lrcLocal))
-                    {
-                        string destLrc = IoPath.Combine(dir, baseName + ".lrc");
-                        await FetchLyricsToAsync(s, destLrc);
-                        lrcLocal = File.Exists(destLrc) ? destLrc : null;
-                    }
-                    if (!string.IsNullOrEmpty(lrcLocal) && File.Exists(lrcLocal))
-                        File.Copy(lrcLocal, IoPath.Combine(dir, baseName + ".lrc"), true);
-                }
-                catch { }
+                    if (!await StreamToFileAsync(url, temp).ConfigureAwait(false)) return null;
+                    var fi = new FileInfo(temp);
+                    if (!fi.Exists || fi.Length < 1024) return null;
 
-                // 触发本地曲库重扫，让刚下载的歌立即出现在「音乐」列表（不等待其结果）
-                try { _ = MusicLibrary.ScanAsync(); } catch { }
-                return dest;
+                    var header = new byte[12];
+                    using (var fs = new FileStream(temp, FileMode.Open, FileAccess.Read, FileShare.Read))
+                    {
+                        if (fs.Read(header, 0, header.Length) < header.Length) return null;
+                    }
+                    string audioExt = AudioExt(header) ?? ".mp3";
+                    string dest = IoPath.Combine(dir, baseName + audioExt);
+                    int n = 1;
+                    while (File.Exists(dest))
+                        dest = IoPath.Combine(dir, baseName + "_" + (++n) + audioExt);
+                    File.Move(temp, dest);
+
+                    // 封面 / 歌词：与播放同逻辑，保证下载三件套与播放时一致。
+                    try
+                    {
+                        var meta = new Song
+                        {
+                            IsOnline = true,
+                            OnlinePlat = s.Plat,
+                            OnlineId = s.Id,
+                            OnlineHqId = s.HqId,
+                            OnlineSqId = s.SqId,
+                            OnlineCover = s.Cover,
+                            Title = string.IsNullOrEmpty(s.Title) ? name : s.Title,
+                            Artist = s.Artist,
+                            Album = s.Album,
+                            DurationMs = s.DurationMs,
+                        };
+                        var coverLocal = await FetchCoverAsync(meta).ConfigureAwait(false);
+                        if (!string.IsNullOrEmpty(coverLocal) && File.Exists(coverLocal))
+                        {
+                            byte[] cb = File.ReadAllBytes(coverLocal);
+                            string ext = ImageExt(cb);
+                            if (string.IsNullOrEmpty(ext)) ext = "jpg";
+                            File.Copy(coverLocal, IoPath.Combine(dir, baseName + "." + ext), true);
+                        }
+                        var lrcLocal = await FetchLyricsAsync(meta).ConfigureAwait(false);
+                        if (string.IsNullOrEmpty(lrcLocal))
+                        {
+                            string destLrc = IoPath.Combine(dir, baseName + ".lrc");
+                            await FetchLyricsToAsync(s, destLrc).ConfigureAwait(false);
+                            lrcLocal = File.Exists(destLrc) ? destLrc : null;
+                        }
+                        if (!string.IsNullOrEmpty(lrcLocal) && File.Exists(lrcLocal))
+                            File.Copy(lrcLocal, IoPath.Combine(dir, baseName + ".lrc"), true);
+                    }
+                    catch { }
+
+                    // 触发本地曲库重扫，让刚下载的歌立即出现在「音乐」列表（不等待其结果）
+                    try { _ = MusicLibrary.ScanAsync(); } catch { }
+                    return dest;
+                }
+                finally
+                {
+                    // 异常或中途失败时清掉半成品，避免残留 .part 垃圾文件
+                    try { if (File.Exists(temp)) File.Delete(temp); } catch { }
+                }
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine(L10n.T("在线下载失败：") + ex.Message);
                 return null;
+            }
+        }
+
+        /// <summary>流式下载：响应体边读边写文件，内存占用恒定（不随文件大小增长）。</summary>
+        private static async Task<bool> StreamToFileAsync(string url, string dest, int timeoutMs = 120000)
+        {
+            try
+            {
+                using (var cts = new System.Threading.CancellationTokenSource(timeoutMs))
+                using (var req = new HttpRequestMessage(HttpMethod.Get, url))
+                using (var resp = await Http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, cts.Token).ConfigureAwait(false))
+                {
+                    if (!resp.IsSuccessStatusCode)
+                    {
+                        Android.Util.Log.Info("MchatMusic", "流式下载 HTTP " + (int)resp.StatusCode + " " + url);
+                        return false;
+                    }
+                    using (var src = await resp.Content.ReadAsStreamAsync().ConfigureAwait(false))
+                    using (var dst = new FileStream(dest, FileMode.Create, FileAccess.Write, FileShare.None, 81920, true))
+                    {
+                        await src.CopyToAsync(dst, 81920, cts.Token).ConfigureAwait(false);
+                        await dst.FlushAsync(cts.Token).ConfigureAwait(false);
+                    }
+                    var len = new FileInfo(dest).Length;
+                    Android.Util.Log.Info("MchatMusic", "流式下载完成 " + len + "B " + url);
+                    return len > 0;
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine(L10n.T("流式下载失败：") + ex.Message);
+                Android.Util.Log.Info("MchatMusic", "流式下载失败 " + url + " : " + ex.Message);
+                return false;
             }
         }
 
