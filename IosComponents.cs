@@ -212,6 +212,7 @@ namespace AhoChatA
         private readonly TextView _largeTitle;
         private readonly TextView _subtitle;
         private readonly LinearLayout _actions;
+        private readonly LinearLayout _top;
         private readonly View _back;
 
         public event EventHandler BackClicked;
@@ -254,22 +255,29 @@ namespace AhoChatA
 
         public LinearLayout Actions { get { return _actions; } }
 
+        /// <summary>是否显示顶部紧凑栏（返回 / 小标题 / 动作）。根页面只用大标题时可关闭，避免留空白。</summary>
+        public bool ShowTopBar
+        {
+            get { return _top.Visibility == ViewStates.Visible; }
+            set { _top.Visibility = value ? ViewStates.Visible : ViewStates.Gone; }
+        }
+
         public IosNavBar(Context context, string title) : base(context)
         {
             Orientation = Orientation.Vertical;
             var p = IosStyle.Colors(context);
             Background = IosStyle.Rounded(context, p.Surface, 0);
 
-            var top = new LinearLayout(context) { Orientation = Orientation.Horizontal };
-            top.SetGravity(GravityFlags.CenterVertical);
-            top.SetMinimumHeight(IosStyle.Dp(context, IosStyle.ToolbarHeight));
-            top.SetPadding(IosStyle.Dp(context, 8), 0, IosStyle.Dp(context, 8), 0);
-            top.LayoutParameters = new LinearLayout.LayoutParams(
+            _top = new LinearLayout(context) { Orientation = Orientation.Horizontal };
+            _top.SetGravity(GravityFlags.CenterVertical);
+            _top.SetMinimumHeight(IosStyle.Dp(context, IosStyle.ToolbarHeight));
+            _top.SetPadding(IosStyle.Dp(context, 8), 0, IosStyle.Dp(context, 8), 0);
+            _top.LayoutParameters = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MatchParent, LinearLayout.LayoutParams.WrapContent);
 
             _back = new IconView(context, IconKind.Back) { IconColor = p.Accent, Thickness = 2f };
             _back.Click += (s, e) => { try { BackClicked?.Invoke(this, EventArgs.Empty); } catch { } };
-            top.AddView(_back, new LinearLayout.LayoutParams(IosStyle.Dp(context, 44), IosStyle.Dp(context, 44)));
+            _top.AddView(_back, new LinearLayout.LayoutParams(IosStyle.Dp(context, 44), IosStyle.Dp(context, 44)));
 
             _title = new TextView(context)
             {
@@ -282,14 +290,14 @@ namespace AhoChatA
             _title.SetTypeface(null, TypefaceStyle.Bold);
             _title.Ellipsize = Android.Text.TextUtils.TruncateAt.End;
             _title.LayoutParameters = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WrapContent, 1f);
-            top.AddView(_title);
+            _top.AddView(_title);
 
             _actions = new LinearLayout(context) { Orientation = Orientation.Horizontal };
             _actions.SetGravity(GravityFlags.CenterVertical);
             _actions.LayoutParameters = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WrapContent, LinearLayout.LayoutParams.WrapContent);
-            top.AddView(_actions);
-            AddView(top);
+            _top.AddView(_actions);
+            AddView(_top);
 
             _largeTitle = new TextView(context)
             {

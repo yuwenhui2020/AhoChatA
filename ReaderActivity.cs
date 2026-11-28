@@ -38,6 +38,10 @@ namespace AhoChatA
         public const string ExtraBook = "book_path";
         /// <summary>伴随 ExtraBook 的书名（与入库时一致，用于在书架中精确定位）。</summary>
         public const string ExtraBookName = "book_name";
+        /// <summary>直接阅读：用阅读模块打开，但不加入书架。</summary>
+        public const string ExtraDirectRead = "direct_read";
+        /// <summary>直接打开已在书架里的书（按 id，避免同名歧义）。</summary>
+        public const string ExtraShelfId = "shelf_id";
 
         /* ---------------- 与主界面一致的配色 ---------------- */
         private const int Accent = unchecked((int)0xFF007AFF);
@@ -55,6 +59,8 @@ namespace AhoChatA
         private ReaderPrefs _prefs;
 
         private readonly Dictionary<string, Book> _openBooks = new Dictionary<string, Book>();
+        // 「直接阅读」临时书：只在本页面生命周期内存在，退出即清理，绝不写入书架
+        private readonly List<string> _transientIds = new List<string>();
         // 书架封面解码结果（后台解码 + 内存复用），避免每次进书架都重新解码同一批图
         private readonly Dictionary<string, Bitmap> _coverCache = new Dictionary<string, Bitmap>();
 
@@ -169,17 +175,8 @@ namespace AhoChatA
             SetContentView(root);
             ApplyChrome();
 
-            // 收到书籍直投：媒体自动加载后由 MediaAutoOpen 把文件落到这里，打开即读
-            try
-            {
-                var autoPath = Intent?.GetStringExtra(ExtraBook);
-                if (!string.IsNullOrEmpty(autoPath) && File.Exists(autoPath))
-                {
-                    var autoName = Intent.GetStringExtra(ExtraBookName);
-                    if (string.IsNullOrEmpty(autoName)) autoName = System.IO.Path.GetFileName(autoPath);
-                    AutoOpenBookPath(autoPath, autoName);
-                }
-            }
+            // 收到书籍直投 / 下载管理器「直接阅读」「加入书架后阅读」
+            try { HandleBookIntent(Intent); }
             catch (Exception ex)
             {
                 Android.Util.Log.Warn("Reader", "书籍直投打开失败: " + ex.Message);
@@ -203,16 +200,7 @@ namespace AhoChatA
         protected override void OnNewIntent(Intent intent)
         {
             base.OnNewIntent(intent);
-            try
-            {
-                var p = intent?.GetStringExtra(ExtraBook);
-                if (!string.IsNullOrEmpty(p) && File.Exists(p))
-                {
-                    var n = intent.GetStringExtra(ExtraBookName);
-                    if (string.IsNullOrEmpty(n)) n = System.IO.Path.GetFileName(p);
-                    AutoOpenBookPath(p, n);
-                }
-            }
+            try { HandleBookIntent(intent); }
             catch (Exception ex) { Android.Util.Log.Warn("Reader", "OnNewIntent 书籍直投失败: " + ex.Message); }
         }
 
@@ -258,6 +246,11 @@ namespace AhoChatA
             try { UnbindMusicEvents(); } catch { }
             try { _tts?.Stop(); _tts?.Shutdown(); } catch { }
             try { _pdfScroll?.Release(); } catch { }   // 释放 PDF 已加载的页图位图
+            foreach (var tid in _transientIds.ToArray())
+            {
+                try { ReaderLibrary.DropTransient(tid); } catch { }
+            }
+            _transientIds.Clear();
             base.OnDestroy();
         }
 
@@ -371,16 +364,16 @@ namespace AhoChatA
             var header = new LinearLayout(this) { Orientation = Orientation.Vertical };
             header.SetPadding(0, 0, 0, Dp(4));
 
-            // iOS 原生大标题导航栏：大标题「书架」+ 右侧动作胶囊
+            // iOS 原生大标题导航栏：书架是根页面，只保留大标题，不占顶部紧凑栏
             var nav = new IosNavBar(this, L10n.T("书架"));
-            nav.ShowCompactTitle = false;   // 大标题已显示，避免重复
-            nav.ShowBackButton = false;     // 书架是阅读模块根页面，不显示返回
-            nav.Actions.AddView(Pill(L10n.T("解析"), v => OpenExplore()));
+            nav.ShowTopBar = false;         // 根页面无返回/动作，避免解析按钮单独占一行
             header.AddView(nav);
 
+            // 「解析」与搜索/导入/书源/网页同一排，视觉与操作位置一致
             var row = new LinearLayout(this) { Orientation = Orientation.Horizontal };
             row.SetGravity(GravityFlags.CenterVertical);
             row.SetPadding(Dp(16), Dp(4), Dp(16), 0);
+            row.AddView(Pill(L10n.T("解析"), v => OpenExplore()));
             row.AddView(Pill(L10n.T("搜索"), OnSearch));
             row.AddView(Pill(L10n.T("导入"), OnImport));
             row.AddView(Pill(L10n.T("书源"), OnManageSources));
@@ -389,7 +382,8 @@ namespace AhoChatA
 
             _shelfSub = new TextView(this) { TextSize = 12 };
             _shelfSub.SetTextColor(new Color(TextSub));
-            _shelfSub.SetPadding(0, Dp(4), 0, 0);
+            // 与胶囊按钮行同左边距，避免提示文字贴住屏幕边缘
+            _shelfSub.SetPadding(Dp(16), Dp(4), Dp(16), 0);
             header.AddView(_shelfSub);
 
             // 第二行：扫描文件夹 + 仅 TXT/PDF 筛选
@@ -1038,17 +1032,54 @@ namespace AhoChatA
         /* ---------------- 打开书籍 ---------------- */
         private void OpenBook(string id) { _ = OpenBookInternal(id, -1, -1); }
 
-        private async Task OpenBookInternal(string id, int chapter, double pct)
+        private Task OpenBookInternal(string id, int chapter, double pct)
+        {
+            var item = ReaderLibrary.Shelf().Find(x => x.Id == id);
+            return item == null ? Task.CompletedTask : OpenBookItem(item, chapter, pct);
+        }
+
+        /// <summary>按 Intent 打开：优先书架 id，其次直接阅读（不入库），最后兼容原「书籍直投」。</summary>
+        private void HandleBookIntent(Intent intent)
+        {
+            if (intent == null) return;
+            var shelfId = intent.GetStringExtra(ExtraShelfId);
+            if (!string.IsNullOrEmpty(shelfId)) { OpenBook(shelfId); return; }
+
+            var path = intent.GetStringExtra(ExtraBook);
+            if (string.IsNullOrEmpty(path) || !File.Exists(path)) return;
+            var name = intent.GetStringExtra(ExtraBookName);
+            if (string.IsNullOrEmpty(name)) name = System.IO.Path.GetFileName(path);
+            if (intent.GetBooleanExtra(ExtraDirectRead, false)) OpenDirectPath(path, name);
+            else AutoOpenBookPath(path, name);
+        }
+
+        /// <summary>下载管理器「直接阅读」：走阅读模块完整解析，但不写入书架。</summary>
+        private async void OpenDirectPath(string path, string name)
+        {
+            try
+            {
+                string err = null;
+                var bytes = await Task.Run(() => File.ReadAllBytes(path));
+                var item = await Task.Run(() => ReaderLibrary.ImportTransient(name, bytes, out err));
+                if (item == null) { ShowToast(err ?? L10n.T("打开失败")); return; }
+                _transientIds.Add(item.Id);
+                await OpenBookItem(item, -1, -1);
+            }
+            catch (Exception ex)
+            {
+                Android.Util.Log.Warn("Reader", "直接阅读失败: " + ex.Message);
+                ShowToast(L10n.T("打开失败：") + ex.Message);
+            }
+        }
+
+        private async Task OpenBookItem(ShelfItem item, int chapter, double pct)
         {
             // async 方法在第一个 await 之前的异常会同步抛给调用方（OpenBook / OpenBookAt
             // 都是直接调用、没有保护），await 之后的异常则变成未观察异常 —— 两种都会让
             // 界面永久停在「正在打开…」或者直接崩溃。统一在这里兜住。
             try
             {
-                _shelf = ReaderLibrary.Shelf();
-                var item = _shelf.Find(x => x.Id == id);
-                if (item == null) return;
-
+                var id = item.Id;
                 ShowToast(L10n.T("正在打开…"));
                 Book book;
                 if (!_openBooks.TryGetValue(id, out book) || book == null)
@@ -3372,11 +3403,14 @@ namespace AhoChatA
             _srchDone = 0;
 
             _srchBox = new LinearLayout(this) { Orientation = Orientation.Vertical };
-            var sv = new ScrollView(this);
-            sv.AddView(_srchBox);
             _srchStatus = new TextView(this) { Text = L10n.T("正在搜索 0/") + enabled.Count + L10n.T(" 个源…"), TextSize = 12 };
             _srchStatus.SetTextColor(new Color(TextSub));
             _srchStatus.SetPadding(Dp(18), Dp(10), Dp(18), Dp(2));
+            var resultBox = new LinearLayout(this) { Orientation = Orientation.Vertical };
+            resultBox.AddView(_srchStatus);
+            resultBox.AddView(_srchBox);
+            var sv = new ScrollView(this);
+            sv.AddView(resultBox);
 
             var bld = L10n.Dialog(this);
             bld.SetTitle(L10n.T("搜索网络书籍"));
@@ -3421,7 +3455,7 @@ namespace AhoChatA
                 txt.AddView(sub);
                 row.AddView(txt, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WrapContent, 1f));
 
-                var go = new TextView(this) { Text = L10n.T("加入"), TextSize = 12 };
+                var go = new TextView(this) { Text = L10n.T("加入书架"), TextSize = 12 };
                 go.SetTextColor(new Color(Accent));
                 go.SetPadding(Dp(12), Dp(6), Dp(8), Dp(6));
                 row.AddView(go);
@@ -3471,7 +3505,7 @@ namespace AhoChatA
                 txt.AddView(sub);
                 row.AddView(txt, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WrapContent, 1f));
 
-                var go = new TextView(this) { Text = L10n.T("加入"), TextSize = 12 };
+                var go = new TextView(this) { Text = L10n.T("加入书架"), TextSize = 12 };
                 go.SetTextColor(new Color(Accent));
                 go.SetPadding(Dp(12), Dp(6), Dp(8), Dp(6));
                 row.AddView(go);
@@ -3500,17 +3534,32 @@ namespace AhoChatA
 
         private void AddOnlineBook(Book b)
         {
-            var sid = "online_" + Guid.NewGuid().ToString("N");
             var list = ReaderLibrary.Shelf();
-            list.Insert(0, new ShelfItem
+            var existing = list.Find(x => x.Type == "online" &&
+                ((!string.IsNullOrEmpty(b.BookUrl) && (x.BookUrl == b.BookUrl || x.TocUrl == b.BookUrl)) ||
+                 (!string.IsNullOrEmpty(b.Name) && x.Name == b.Name && x.SourceUrl == b.SourceUrl)));
+            string sid;
+            if (existing != null)
             {
-                Id = sid, Name = b.Name, Author = b.Author, Type = "online",
-                SourceUrl = b.SourceUrl, BookUrl = b.BookUrl, TocUrl = b.TocUrl,
-                CoverUrl = b.CoverUrl, Added = DateTime.Now
-            });
-            ReaderLibrary.SaveShelf(list);
+                sid = existing.Id;
+                if (string.IsNullOrEmpty(existing.CoverUrl)) existing.CoverUrl = b.CoverUrl;
+                ReaderLibrary.SaveShelf(list);
+            }
+            else
+            {
+                sid = "online_" + Guid.NewGuid().ToString("N");
+                list.Insert(0, new ShelfItem
+                {
+                    Id = sid, Name = b.Name, Author = b.Author, Type = "online",
+                    SourceUrl = b.SourceUrl, BookUrl = b.BookUrl, TocUrl = b.TocUrl,
+                    CoverUrl = b.CoverUrl, Added = DateTime.Now
+                });
+                ReaderLibrary.SaveShelf(list);
+            }
             _shelf = ReaderLibrary.Shelf();
             RenderShelf();
+            // 搜索结果的封面同样落到本地缓存，书架格子才能显示真实封面
+            _ = CacheOnlineCoverAsync(sid, b);
             OpenBook(sid);
         }
 
@@ -3872,6 +3921,7 @@ namespace AhoChatA
                     return;
                 }
                 _parsed = result;
+                AddParsedBookToShelf(result);
                 RenderParsedChapters();
             }
             catch (Exception ex)
@@ -3881,6 +3931,57 @@ namespace AhoChatA
                 ShowToast(_parseStatus.Text);
             }
             finally { _parsing = false; }
+        }
+
+        /// <summary>解析成功的书默认加入书架：目录直接落盘，封面后台抓取到本地缓存。</summary>
+        private void AddParsedBookToShelf(NovelParseResult result)
+        {
+            try
+            {
+                var book = result.Book;
+                if (book == null) return;
+                var list = ReaderLibrary.Shelf();
+                var key = string.IsNullOrEmpty(book.BookUrl) ? (book.TocUrl ?? "") : book.BookUrl;
+                var existing = list.Find(x => x.Type == "online" &&
+                    ((!string.IsNullOrEmpty(key) && (x.BookUrl == key || x.TocUrl == key)) ||
+                     (!string.IsNullOrEmpty(book.Name) && x.Name == book.Name)));
+                if (existing != null)
+                {
+                    if (!string.IsNullOrEmpty(book.CoverUrl)) existing.CoverUrl = book.CoverUrl;
+                    existing.Total = result.Chapters.Count;
+                    ReaderLibrary.SaveShelf(list);
+                    ReaderLibrary.SaveToc(existing.Id, result.Chapters);
+                    _ = CacheOnlineCoverAsync(existing.Id, book);
+                    return;
+                }
+
+                var sid = "online_" + Guid.NewGuid().ToString("N");
+                list.Insert(0, new ShelfItem
+                {
+                    Id = sid, Name = book.Name, Author = book.Author, Type = "online",
+                    SourceUrl = book.SourceUrl, BookUrl = book.BookUrl, TocUrl = book.TocUrl,
+                    CoverUrl = book.CoverUrl, Total = result.Chapters.Count, Added = DateTime.Now
+                });
+                ReaderLibrary.SaveShelf(list);
+                ReaderLibrary.SaveToc(sid, result.Chapters);
+                _shelf = ReaderLibrary.Shelf();
+                RenderShelf();
+                ShowToast(L10n.T("已加入书架"));
+                _ = CacheOnlineCoverAsync(sid, book);
+            }
+            catch (Exception ex)
+            {
+                Android.Util.Log.Warn("NovelParse", "解析书入库失败: " + ex);
+            }
+        }
+
+        /// <summary>在线书封面落地：书架格子只解码本地缓存，下载完成后刷新列表。</summary>
+        private async Task CacheOnlineCoverAsync(string shelfId, Book book)
+        {
+            if (string.IsNullOrEmpty(book?.CoverUrl)) return;
+            var ok = await ReaderLibrary.SaveCoverFromUrlAsync(
+                shelfId, book.CoverUrl, string.IsNullOrEmpty(book.TocUrl) ? book.BookUrl : book.TocUrl);
+            if (ok) RunOnUiThread(() => RenderShelf());
         }
 
         private void RenderParsedChapters()
@@ -4303,6 +4404,7 @@ namespace AhoChatA
             _shelf = ReaderLibrary.Shelf();
             RenderShelf();
             ShowToast(L10n.T("已加入书架"));
+            _ = CacheOnlineCoverAsync(sid, b);
             if (openText) OpenBook(sid);
         }
 

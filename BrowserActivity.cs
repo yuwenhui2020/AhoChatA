@@ -736,7 +736,11 @@ namespace AhoChatA
 
         private void ShareCurrentPage()
         {
-            var url = CurrentUrl;
+            ShareUrl(CurrentUrl);
+        }
+
+        private void ShareUrl(string url)
+        {
             if (!IsHttpUrl(url)) return;
             try
             {
@@ -1736,51 +1740,22 @@ window.__mchatDoTranslate=function(lang,onlySel){
             web.LongClick += (sender, e) =>
             {
                 if (tab.Closed || tab != _activeTab) return;
-                var hit = web.GetHitTestResult();
-                if (hit == null)
-                {
-                    // 纯文本区域 GetHitTestResult() 常返回 null：同样尝试取选区建屏蔽规则
-                    try
-                    {
-                        web.EvaluateJavascript("setTimeout(function(){try{if(window.__mchatPickSelection&&!window.__mchatPickSelection()){setTimeout(function(){try{window.__mchatPickSelection&&window.__mchatPickSelection();}catch(e){}},450);}}catch(e){}},350)", null);
-                    }
-                    catch { }
-                    return;
-                }
-                var type = hit.Type;
-                var isLink = type == HitTestResult.AnchorType || type == HitTestResult.SrcAnchorType
-                    || type == HitTestResult.ImageAnchorType || type == HitTestResult.SrcImageAnchorType;
-                var isImage = type == HitTestResult.ImageType || type == HitTestResult.ImageAnchorType
-                    || type == HitTestResult.SrcImageAnchorType;
-                var url = hit.Extra;
-                if (!isLink && !isImage)
-                {
-                    // 纯文本长按：等系统 ActionMode 选中完成后取选区，
-                    // 由 InstallAdTextPickJs 注入的全局函数回传文本+元素选择器给原生菜单。
-                    try
-                    {
-                        web.EvaluateJavascript("setTimeout(function(){try{if(window.__mchatPickSelection&&!window.__mchatPickSelection()){setTimeout(function(){try{window.__mchatPickSelection&&window.__mchatPickSelection();}catch(e){}},450);}}catch(e){}},350)", null);
-                    }
-                    catch { }
-                    return;   // 不 Handled，保留系统复制/全选菜单
-                }
-                if (!IsHttpUrl(url)) return;
+                // 统一接管长按：屏蔽系统 ActionMode（复制/全选），避免和自定义菜单叠成两个窗口。
                 e.Handled = true;
-                var referer = tab.Url;
-                var userAgent = tab.Web.Settings.UserAgentString;
-                var heading = isImage ? L10n.T("图片 · ") : L10n.T("链接 · ");
-                L10n.Dialog(this).SetTitle(heading + url)
-                    .SetItems(new[] { L10n.T("在新标签页打开"), L10n.T("在后台标签页打开"), L10n.T("复制地址"), L10n.T("下载") }, (dialog, choice) =>
-                    {
-                        if (tab.Closed) return;
-                        switch (choice.Which)
-                        {
-                            case 0: NewTab(url, null, true, tab.DesktopSite); break;
-                            case 1: NewTab(url, null, false, tab.DesktopSite); break;
-                            case 2: CopyToClipboard(url); break;
-                            case 3: HandleDownload(tab, url, userAgent, null, null, referer); break;
-                        }
-                    }).SetNegativeButton(L10n.T("取消"), (dialog, choice) => { }).Show();
+                string hitUrl = "";
+                try
+                {
+                    var hit = web.GetHitTestResult();
+                    if (hit != null && !string.IsNullOrEmpty(hit.Extra)) hitUrl = hit.Extra;
+                }
+                catch { }
+                // 触点坐标由页面内的 touchstart 记录，与 elementFromPoint 坐标系完全一致；
+                // JS 一次性回传链接/图片地址 + 文字 + 元素选择器，原生只弹一个菜单。
+                var js = "(function(){var p={x:0,y:0};try{if(window.__mchatLastPoint)p=window.__mchatLastPoint();}catch(err){}"
+                    + "try{if(window.__mchatDescribeAt&&window.__mchatDescribeAt(p.x,p.y))return;}catch(err){}"
+                    + "try{window.__mchatDescribeFallback&&window.__mchatDescribeFallback(p.x,p.y,"
+                    + JsonEncodeString(hitUrl) + ");}catch(err){}})()";
+                try { web.EvaluateJavascript(js, null); } catch { }
             };
         }
 
@@ -1971,8 +1946,8 @@ window.__mchatDoTranslate=function(lang,onlySel){
             {
                 if (IsHttpUrl(url)) RecordHistory(url, tab.Title);
                 if (_adBlockEnabled) _adBlockEngine.ApplyCosmeticFilters(tab.Web, url);
-                // 每次页面加载完成后重装「长按选中文本 → 屏蔽规则」监听（导航会丢失注入）
-                InstallAdTextPickJs(tab.Web);
+                // 每次页面加载完成后重装「统一长按描述」脚本（导航会丢失注入）
+                InstallContentPickJs(tab.Web);
                 if (_browserNight) ApplyPageDarkCss(tab.Web, true);
                 if (_resourceSniffingEnabled) tab.Sniffer.SniffDom(tab.Web, url);
                 // 注入油猴脚本。document-start 在 OnNavStarted(onPageStarted) 注入时，
@@ -3934,15 +3909,30 @@ else {{ document.body.innerHTML = '<div style=color:#fff;padding:20px;text-align
         }
 
         /// <summary>
-        /// 页面加载完成后注入「长按选中文本 → 广告屏蔽」监听（导航会丢失注入，故每次都装）。
-        /// 取选区文本 + 稳健 CSS 选择器回传原生；拦截系统默认菜单，复制/搜索在原生对话框里提供。
+        /// 页面加载完成后注入「统一长按描述」脚本（导航会丢失注入，故每次都装）。
+        /// 长按本身由原生 WebView.LongClick 接管，脚本只负责把触点处的链接/图片地址、
+        /// 选中文字和稳健 CSS 选择器一次性回传，原生据此弹出唯一一个菜单。
         /// </summary>
-        private void InstallAdTextPickJs(WebView web)
+        private void InstallContentPickJs(WebView web)
         {
             if (web == null) return;
             const string js = @"(function(){
-if(window.__mchatAdTextPick)return;
-window.__mchatAdTextPick=true;
+if(window.__mchatContentPick)return;
+window.__mchatContentPick=true;
+// 页面自己记触点：clientX/Y 与 elementFromPoint 同一坐标系，避免原生换算偏差。
+var _lx=0,_ly=0;
+document.addEventListener('touchstart',function(e){
+ if(e.touches.length===1){_lx=e.touches[0].clientX;_ly=e.touches[0].clientY;}
+},{passive:true});
+window.__mchatLastPoint=function(){return {x:_lx,y:_ly};};
+function findLink(el){
+ var n=el;
+ while(n&&n.nodeType===1){
+  if(n.tagName==='A'&&n.getAttribute('href'))return n.href;
+  n=n.parentElement;
+ }
+ return '';
+}
 function esc(s){try{return (window.CSS&&CSS.escape)?CSS.escape(s):s.replace(/([^a-zA-Z0-9_-])/g,'\\$1');}catch(e){return s;}}
 function selPath(el){
  if(!el||el.nodeType!==1||el.tagName==='BODY'||el.tagName==='HTML')return '';
@@ -3956,24 +3946,26 @@ function selPath(el){
    cls=cs.map(function(c){return '.'+esc(c);}).join('');
   }
   var parent=node.parentElement,idx=1;
-  if(parent){var kids=parent.children;for(var i=0;i<kids.length;i++){if(kids[i]===node){idx=i+1;break;}}}
+  if(parent){
+   // nth-of-type 按「同标签」计数，不能用 parent.children 的总序号，否则会选中相邻元素
+   var kids=parent.children,same=0;
+   for(var i=0;i<kids.length;i++){
+    if(kids[i].tagName===node.tagName){same++;if(kids[i]===node){idx=same;break;}}
+   }
+  }
   parts.unshift(tag+cls+(idx>1?':nth-of-type('+idx+')':''));
   node=parent;
   if(node&&(node.tagName==='BODY'||node.tagName==='HTML'))break;
  }
  return parts.join(' > ');
 }
-function textAtPoint(x,y){
- var el=document.elementFromPoint(x,y);
- if(!el)return null;
- // 优先用用户已选中的文本（系统 ActionMode 选中后）
+function textAt(el){
  var s=window.getSelection(),t=s?s.toString().trim():'';
  if(t&&t.length<=200){
   var n=s.anchorNode;
   var ne=n&&n.nodeType===3?n.parentElement:(n&&n.nodeType===1?n:null);
   return {text:t,el:ne||el};
  }
- // 否则取触点所在的文字节点整段文本
  var walker=document.createTreeWalker(el,NodeFilter.SHOW_TEXT,null,false);
  var node,txt='';
  while((node=walker.nextNode())){
@@ -3981,87 +3973,129 @@ function textAtPoint(x,y){
   if(v.length>=2){txt=v;break;}
  }
  if(!txt&&el.innerText)txt=el.innerText.trim();
- if(!txt||txt.length>200)return null;
+ if(!txt||txt.length>200)return {text:'',el:el};
  return {text:txt,el:el};
 }
-window.__mchatPickSelection=function(x,y){
+function send(text,el,link,isImage){
+ var sel=selPath(el);
+ if(!link&&!sel)return false;
+ try{MchatJs.contentPicked(text||'',sel||'',location.href,link||'',!!isImage);return true;}catch(err){return false;}
+}
+window.__mchatDescribeAt=function(x,y){
  try{
-  if(typeof x!=='number'||typeof y!=='number'){
-   var s=window.getSelection(),t=s?s.toString().trim():'';
-   if(!t||t.length>200)return false;
-   var n=s.anchorNode;
-   var el=n&&n.nodeType===3?n.parentElement:(n&&n.nodeType===1?n:null);
-   if(!el||!selPath(el))return false;
-   MchatJs.adBlockPicked(t,selPath(el),location.href);
-   return true;
-  }
-  var hit=textAtPoint(x,y);
-  if(!hit)return false;
-  var sel=selPath(hit.el);
-  if(!sel)return false;
-  MchatJs.adBlockPicked(hit.text,sel,location.href);
-  return true;
+  var el=document.elementFromPoint(x,y);
+  if(!el)return false;
+  var link=findLink(el);
+  var isImage=el.tagName==='IMG';
+  if(!link&&isImage)link=el.src||'';
+  var p=textAt(el),text=p.text;
+  if(!text&&isImage&&el.alt)text=(el.alt+'').trim().substring(0,200);
+  return send(text,p.el||el,link,isImage);
  }catch(err){return false;}
 };
-// 自己实现长按检测：长按 550ms 且未明显移动 → 取触点文本建屏蔽规则。
-var _ts=0,_tx=0,_ty=0,_timer=null,moved=false;
-document.addEventListener('touchstart',function(e){
- if(e.touches.length!==1)return;
- moved=false;
- _tx=e.touches[0].clientX;_ty=e.touches[0].clientY;_ts=Date.now();
- try{clearTimeout(_timer);}catch(err){}
- _timer=setTimeout(function(){
-  if(!moved){try{window.__mchatPickSelection(_tx,_ty);}catch(err){}}
- },550);
-},{passive:true});
-document.addEventListener('touchmove',function(e){
- if(!e.touches.length)return;
- if(Math.abs(e.touches[0].clientX-_tx)>12||Math.abs(e.touches[0].clientY-_ty)>12)moved=true;
-},{passive:true});
-document.addEventListener('touchend',function(){try{clearTimeout(_timer);}catch(err){}},{passive:true});
+window.__mchatDescribeFallback=function(x,y,url){
+ try{
+  if(!url)return false;
+  var el=document.elementFromPoint(x,y);
+  return send('',el||document.body,url,!!(el&&el.tagName==='IMG'));
+ }catch(err){return false;}
+};
+window.__mchatDescribeSelection=function(){
+ try{
+  var s=window.getSelection(),t=s?s.toString().trim():'';
+  if(!t||t.length>200)return false;
+  var n=s.anchorNode;
+  var el=n&&n.nodeType===3?n.parentElement:(n&&n.nodeType===1?n:null);
+  if(!el)return false;
+  return send(t,el,'',false);
+ }catch(err){return false;}
+};
+// contextmenu 兜底：个别 WebView 版本不派发 LongClick 时仍能回传同一份信息。
 document.addEventListener('contextmenu',function(e){
- try{ if(window.__mchatPickSelection()&&e.preventDefault) e.preventDefault(); }catch(err){}
+ try{
+  var ok=false;
+  if(e.clientX>0||e.clientY>0)ok=window.__mchatDescribeAt(e.clientX,e.clientY);
+  if(!ok)ok=window.__mchatDescribeSelection();
+  if(ok&&e.preventDefault)e.preventDefault();
+ }catch(err){}
 },true);
 })();";
             try { web.EvaluateJavascript(js, null); } catch { }
         }
 
         /// <summary>长按选中文本后的原生菜单：屏蔽元素（本站/全网）、复制、搜索。</summary>
-        public void OnTextPickedForAd(string text, string selector, string url)
+        /// <summary>
+        /// 统一的长按内容菜单：标签页操作 → 下载/复制/分享 → 文字操作 → 屏蔽元素。
+        /// 链接、图片、纯文本都走这里，保证一次长按只弹一个窗口。
+        /// </summary>
+        public void OnContentPicked(string text, string selector, string pageUrl, string linkUrl, bool isImage)
         {
-            if (string.IsNullOrWhiteSpace(text) || string.IsNullOrWhiteSpace(selector)) return;
+            if (IsFinishing || IsDestroyed) return;
+            var tab = _activeTab;
+            if (tab == null || tab.Closed) return;
             try
             {
-                string host = "";
-                try { host = Android.Net.Uri.Parse(url)?.Host?.ToLowerInvariant() ?? ""; } catch { }
-                string preview = text.Length > 30 ? text.Substring(0, 30) + "…" : text;
-                var web = _web;
-                // 注意：AlertDialog 的 SetMessage 与 SetItems 不能同用（列表项会被挤出不显示），
-                // 因此把选中内容放进标题，列表项独立呈现。
+                bool hasLink = IsHttpUrl(linkUrl);
+                bool hasText = !string.IsNullOrWhiteSpace(text);
+                bool hasSelector = !string.IsNullOrWhiteSpace(selector);
+                if (!hasLink && !hasText && !hasSelector) return;
+
+                var items = new List<string>();
+                var actions = new List<Action>();
+                string referer = tab.Url;
+                string ua = tab.Web.Settings.UserAgentString;
+
+                if (hasLink)
+                {
+                    items.Add(L10n.T("在新标签页打开"));
+                    actions.Add(() => NewTab(linkUrl, null, true, tab.DesktopSite));
+                    items.Add(L10n.T("在后台标签页打开"));
+                    actions.Add(() => NewTab(linkUrl, null, false, tab.DesktopSite));
+                    items.Add(L10n.T("直接打开", "Open here"));
+                    actions.Add(() => NavigateTo(linkUrl));
+                    items.Add(L10n.T("下载"));
+                    actions.Add(() => HandleDownload(tab, linkUrl, ua, null, null, referer));
+                    items.Add(L10n.T("复制链接地址", "Copy link address"));
+                    actions.Add(() => CopyToClipboard(linkUrl));
+                    items.Add(L10n.T("分享链接", "Share link"));
+                    actions.Add(() => ShareUrl(linkUrl));
+                }
+                if (hasText)
+                {
+                    items.Add(L10n.T("复制选中文字"));
+                    actions.Add(() => CopyToClipboard(text));
+                    items.Add(L10n.T("搜索选中文字"));
+                    actions.Add(() => NavigateTo(SearchUrlFor(text)));
+                }
+                if (hasSelector)
+                {
+                    string host = "";
+                    try { host = Android.Net.Uri.Parse(pageUrl)?.Host?.ToLowerInvariant() ?? ""; } catch { }
+                    items.Add(L10n.T("隐藏此元素（本站）"));
+                    actions.Add(() =>
+                    {
+                        if (string.IsNullOrEmpty(host)) ToastShort(L10n.T("无法获取站点域名，请改用全网规则"));
+                        else AddTextAdRule(host + "##" + selector, selector, _web);
+                    });
+                    items.Add(L10n.T("隐藏此元素（所有网站）"));
+                    actions.Add(() => AddTextAdRule("##" + selector, selector, _web));
+                }
+
+                // AlertDialog 的 SetMessage 与 SetItems 不能同用（列表项会被挤出不显示），
+                // 因此把长按对象放进标题，菜单项独立呈现。
+                string preview = hasLink ? linkUrl : (text ?? "");
+                preview = preview.Replace("\n", " ").Replace("\r", " ");
+                if (preview.Length > 60) preview = preview.Substring(0, 60) + "…";
+                string heading = isImage
+                    ? L10n.T("图片 · ")
+                    : hasLink ? L10n.T("链接 · ") : L10n.T("选中内容 · ", "Selection · ");
                 L10n.Dialog(this)
-                    .SetTitle(L10n.T("屏蔽广告 · ") + preview)
-                    .SetItems(new[]
+                    .SetTitle(heading + preview)
+                    .SetItems(items.ToArray(), (d, a) =>
                     {
-                        L10n.T("隐藏此元素（本站）"), L10n.T("隐藏此元素（所有网站）"),
-                        L10n.T("复制选中文字"), L10n.T("搜索选中文字")
-                    }, (d, a) =>
-                    {
-                        switch (a.Which)
-                        {
-                            case 0:
-                                if (string.IsNullOrEmpty(host)) ToastShort(L10n.T("无法获取站点域名，请改用全网规则"));
-                                else AddTextAdRule(host + "##" + selector, selector, web);
-                                break;
-                            case 1:
-                                AddTextAdRule("##" + selector, selector, web);
-                                break;
-                            case 2:
-                                CopyToClipboard(text);
-                                break;
-                            case 3:
-                                NavigateTo(SearchUrlFor(text));
-                                break;
-                        }
+                        if (a.Which < 0 || a.Which >= actions.Count) return;
+                        try { actions[a.Which]?.Invoke(); }
+                        catch (System.Exception ex) { ToastShort(L10n.T("操作失败：", "Failed: ") + ex.Message); }
                     })
                     .SetNegativeButton(L10n.T("取消"), (d, a) => { })
                     .Show();

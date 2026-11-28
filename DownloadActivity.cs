@@ -21,6 +21,7 @@ using SysIO = System.IO;
 using SysPath = System.IO.Path;
 using JavaFile = Java.IO.File;
 using AhoChatA.Vod;
+using AhoChatA.Reader;
 
 namespace AhoChatA
 {
@@ -54,6 +55,80 @@ namespace AhoChatA
         private const string PrefClipboardMonitor = "download_clipboard_monitor";
         private const string PrefAutoOpen = "download_auto_open";
         private const string PrefExtractArchive = "download_extract_archive";
+
+        /* ============ 下载文件 → 阅读模块 ============ */
+
+        // 阅读模块能打开的全部格式：小说正文 + PDF/EPUB/FB2/MD/ZIP + 文档查看器
+        private static readonly string[] ReadingExts =
+        {
+            ".txt", ".text", ".pdf", ".epub", ".fb2", ".fbz", ".md", ".markdown", ".zip",
+            ".docx", ".xlsx", ".pptx", ".doc", ".xls", ".ppt"
+        };
+
+        public static bool IsReadingFormat(string path)
+        {
+            if (string.IsNullOrEmpty(path)) return false;
+            var ext = SysPath.GetExtension(path);
+            if (string.IsNullOrEmpty(ext)) return false;
+            foreach (var e in ReadingExts) if (string.Equals(ext, e, StringComparison.OrdinalIgnoreCase)) return true;
+            return false;
+        }
+
+        /// <summary>「直接阅读」：调用阅读模块打开本地文件，但不写入书架。</summary>
+        public static void OpenDirectRead(Context ctx, string path)
+        {
+            if (ctx == null || string.IsNullOrEmpty(path) || !SysIO.File.Exists(path))
+            {
+                if (ctx != null) L10n.Toast(ctx, L10n.T("文件不存在"), ToastLength.Short).Show();
+                return;
+            }
+            var i = new Intent(ctx, typeof(ReaderActivity));
+            i.PutExtra(ReaderActivity.ExtraBook, path);
+            i.PutExtra(ReaderActivity.ExtraBookName, SysPath.GetFileNameWithoutExtension(path));
+            i.PutExtra(ReaderActivity.ExtraDirectRead, true);
+            i.AddFlags(ActivityFlags.SingleTop);
+            if (!(ctx is Activity)) i.AddFlags(ActivityFlags.NewTask);
+            ctx.StartActivity(i);
+        }
+
+        /// <summary>「加入书架」：先导入书架，再打开阅读模块；导入在后台完成，避免大文件卡 UI。</summary>
+        public static void AddToShelfAndRead(Context ctx, string path)
+        {
+            var act = ctx as Activity;
+            if (act == null || string.IsNullOrEmpty(path) || !SysIO.File.Exists(path))
+            {
+                if (ctx != null) L10n.Toast(ctx, L10n.T("文件不存在"), ToastLength.Short).Show();
+                return;
+            }
+            Task.Run(() =>
+            {
+                string error = null;
+                try
+                {
+                    if (ReaderLibrary.AppContext == null) ReaderLibrary.Init(act.ApplicationContext);
+                    var name = SysPath.GetFileNameWithoutExtension(path);
+                    var item = ReaderLibrary.Import(name, SysIO.File.ReadAllBytes(path), out error);
+                    return new Tuple<ShelfItem, string>(item, error);
+                }
+                catch (Exception ex) { return new Tuple<ShelfItem, string>(null, ex.Message); }
+            }).ContinueWith(t =>
+            {
+                act.RunOnUiThread(() =>
+                {
+                    var r = t.Result;
+                    if (r.Item1 == null)
+                    {
+                        L10n.Toast(act, L10n.T("打开失败：") + (r.Item2 ?? ""), ToastLength.Short).Show();
+                        return;
+                    }
+                    L10n.Toast(act, L10n.T("已加入书架"), ToastLength.Short).Show();
+                    var i = new Intent(act, typeof(ReaderActivity));
+                    i.PutExtra(ReaderActivity.ExtraShelfId, r.Item1.Id);
+                    i.AddFlags(ActivityFlags.SingleTop);
+                    act.StartActivity(i);
+                });
+            });
+        }
 
         public static void OpenNew(Context ctx, string url = null, string fileName = null, string cookie = null,
             string userAgent = null, string referer = null, bool forceHls = false)
@@ -814,10 +889,11 @@ namespace AhoChatA
                 pRow.AddView(copy);
                 if (t.Status == "done" && SysIO.File.Exists(t.OutputPath))
                 {
-                    var open = new TextView(this) { Text = L10n.T("打开"), TextSize = 13, Gravity = GravityFlags.Center };
+                    bool readable = IsReadingFormat(t.OutputPath);
+                    var open = new TextView(this) { Text = readable ? L10n.T("阅读") : L10n.T("打开"), TextSize = 13, Gravity = GravityFlags.Center };
                     open.SetTextColor(Accent);
                     open.SetPadding(Dp(12), Dp(6), Dp(4), Dp(6));
-                    open.Click += (s, e) => OpenDownloadedFile(t.OutputPath);
+                    open.Click += (s, e) => { if (readable) OpenDirectRead(this, t.OutputPath); else OpenDownloadedFile(t.OutputPath); };
                     pRow.AddView(open);
                     
                     var share = new TextView(this) { Text = L10n.T("分享"), TextSize = 13, Gravity = GravityFlags.Center };
@@ -948,14 +1024,22 @@ namespace AhoChatA
 
         private void ShowTaskDetail(DownloadTask t)
         {
-            var actions = new List<(string Label, Action Run)>
+            var actions = new List<(string Label, Action Run)>();
+            bool readable = t.Status == "done" && IsReadingFormat(t.OutputPath);
+            if (readable)
             {
-                (L10n.T("打开文件"), () => OpenDownloadedFile(t.OutputPath)),
-                (L10n.T("分享文件"), () => ShareFile(t.OutputPath)),
-                (L10n.T("复制路径"), () => CopyPath(t.OutputPath)),
-                (L10n.T("复制链接"), () => CopyPath(t.Url)),
-                (L10n.T("查看详情"), () => ShowDetailDialog(t))
-            };
+                // 原「打开文件」由阅读模块接管：要么先入库再读，要么临时直读
+                actions.Add((L10n.T("加入书架"), () => AddToShelfAndRead(this, t.OutputPath)));
+                actions.Add((L10n.T("直接阅读"), () => OpenDirectRead(this, t.OutputPath)));
+            }
+            else if (t.Status == "done")
+            {
+                actions.Add((L10n.T("打开文件"), () => OpenDownloadedFile(t.OutputPath)));
+            }
+            actions.Add((L10n.T("分享文件"), () => ShareFile(t.OutputPath)));
+            actions.Add((L10n.T("复制路径"), () => CopyPath(t.OutputPath)));
+            actions.Add((L10n.T("复制链接"), () => CopyPath(t.Url)));
+            actions.Add((L10n.T("查看详情"), () => ShowDetailDialog(t)));
             if (t.Status == "failed" || t.Status == "canceled")
                 actions.Insert(0, (L10n.T("重试"), () => DownloadCenter.Retry(t.Id)));
             if (t.Status != "done")

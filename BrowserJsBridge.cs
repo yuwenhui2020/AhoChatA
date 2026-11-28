@@ -51,8 +51,20 @@ namespace AhoChatA
         [JavascriptInterface]
         public void AdBlockPicked(string text, string selector, string url)
         {
+            // 兼容旧注入脚本：统一并到同一个长按菜单入口，避免弹出第二个窗口。
+            ContentPicked(text, selector, url, "", false);
+        }
+
+        /// <summary>
+        /// 统一的长按内容回调：一次回传触点处的链接/图片地址、文字、元素选择器。
+        /// 原生据此只弹一个菜单（标签页操作 → 下载/复制/分享 → 文字操作 → 屏蔽元素）。
+        /// </summary>
+        [Export("contentPicked")]
+        [JavascriptInterface]
+        public void ContentPicked(string text, string selector, string pageUrl, string linkUrl, bool isImage)
+        {
             if (TryGetOwner(out var owner))
-                owner.RunOnUiThread(() => owner.OnTextPickedForAd(text, selector, url));
+                owner.RunOnUiThread(() => owner.OnContentPicked(text, selector, pageUrl, linkUrl, isImage));
         }
 
         /* ---------------- 网页长截图 ---------------- */

@@ -196,6 +196,17 @@ namespace AhoChatA.Music
         private static bool SkipHidden(string path)
         {
             var p = path.Replace('\\', '/');
+            // 本程序下载目录虽在 Android/data 下，但属于用户主动下载的媒体，必须放行
+            foreach (var root in new[]
+            {
+                global::AhoChatA.Vod.DownloadCenter.HttpDownloadsDir(),
+                OnlineMusic.DownloadDir()
+            })
+            {
+                if (string.IsNullOrEmpty(root)) continue;
+                var prefix = root.Replace('\\', '/').TrimEnd('/') + "/";
+                if (p.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) return false;
+            }
             return p.IndexOf("/Android/data/", StringComparison.OrdinalIgnoreCase) >= 0
                    || p.IndexOf("/Android/obb/", StringComparison.OrdinalIgnoreCase) >= 0
                    || p.IndexOf("/.", StringComparison.OrdinalIgnoreCase) >= 0;

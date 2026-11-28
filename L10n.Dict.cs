@@ -438,6 +438,8 @@ namespace AhoChatA
             ["已加入下载队列，可在「下载」查看进度"] = "Queued; track progress in \"Downloads\"",
             ["已加入下载队列：{detectedType} · {title}"] = "Added to the queue: {detectedType} · {title}",
             ["已加入下载队列：整本缓存进度见「服务 → 媒体 → 下载」"] = "Added to the queue: whole-book progress is under Services → Media → Downloads",
+            ["加入书架"] = "Add to library",
+            ["直接阅读"] = "Read now",
             ["已加入书架"] = "Added to library",
             ["已加入书架："] = "Added to library: ",
             ["已加入播放列表，后台缓存中…"] = "Added to the playlist, caching in the background…",

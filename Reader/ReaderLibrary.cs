@@ -27,6 +27,8 @@ namespace AhoChatA.Reader
         private static ReaderEngine _engine;
         private static readonly object _io = new object();
         private static readonly Dictionary<string, Book> _cache = new Dictionary<string, Book>();
+        // 临时直读书的真实落盘路径（不写入书架，退出阅读时清理）
+        private static readonly Dictionary<string, string> _transientPaths = new Dictionary<string, string>();
         private static ReaderPrefs _prefs;
 
         public static void Init(Context ctx)
@@ -69,8 +71,67 @@ namespace AhoChatA.Reader
             return "txt";
         }
 
-        /// <summary>书架封面（PDF 第一页 / EPUB 内嵌封面）；无封面返回 null。</summary>
+        /// <summary>书架封面（PDF 第一页 / EPUB 内嵌封面 / 在线书抓取的封面）；无封面返回 null。</summary>
         public static byte[] CoverBytes(string id) => PdfCache.CoverJpeg(id);
+
+        /// <summary>
+        /// 把在线书封面下载到与 PDF/EPUB 共用的本地封面缓存。
+        /// 带来源站 Referer，避免防盗链；只落真正图片，失败不影响入库。
+        /// </summary>
+        public static async Task<bool> SaveCoverFromUrlAsync(string id, string coverUrl, string referer = null)
+        {
+            if (string.IsNullOrWhiteSpace(id) || string.IsNullOrWhiteSpace(coverUrl)) return false;
+            Uri uri;
+            if (!Uri.TryCreate(coverUrl, UriKind.Absolute, out uri)) return false;
+            try
+            {
+                using (var handler = new HttpClientHandler { AllowAutoRedirect = true, UseProxy = false })
+                using (var client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(15) })
+                {
+                    client.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent",
+                        "Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Mobile Safari/537.36");
+                    if (!string.IsNullOrEmpty(referer))
+                    {
+                        Uri refUri;
+                        if (Uri.TryCreate(referer, UriKind.Absolute, out refUri))
+                            client.DefaultRequestHeaders.TryAddWithoutValidation("Referer",
+                                refUri.GetLeftPart(UriPartial.Scheme) + "://" + refUri.Authority + "/");
+                    }
+                    var resp = await client.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false);
+                    if (!resp.IsSuccessStatusCode) return false;
+                    using (var stream = await resp.Content.ReadAsStreamAsync().ConfigureAwait(false))
+                    using (var ms = new MemoryStream())
+                    {
+                        var buf = new byte[8192];
+                        int n;
+                        while ((n = await stream.ReadAsync(buf, 0, buf.Length).ConfigureAwait(false)) > 0)
+                        {
+                            if (ms.Length + n > 3L * 1024 * 1024) break;   // 封面不该超过 3MB
+                            ms.Write(buf, 0, n);
+                        }
+                        var bytes = ms.ToArray();
+                        if (!IsCoverImage(bytes)) return false;
+                        PdfCache.SaveCover(id, bytes);
+                        return true;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Android.Util.Log.Warn("ReaderLibrary", "在线封面下载失败 " + coverUrl + ": " + ex.Message);
+                return false;
+            }
+        }
+
+        private static bool IsCoverImage(byte[] b)
+        {
+            if (b == null || b.Length < 64) return false;
+            if (b[0] == 0xFF && b[1] == 0xD8 && b[2] == 0xFF) return true;               // JPEG
+            if (b[0] == 0x89 && b[1] == 0x50 && b[2] == 0x4E && b[3] == 0x47) return true; // PNG
+            if (b[0] == 0x52 && b[1] == 0x49 && b[2] == 0x46 && b[3] == 0x46) return true; // WEBP
+            if (b[0] == 0x47 && b[1] == 0x49 && b[2] == 0x46) return true;                // GIF
+            return false;
+        }
 
         /// <summary>PDF 单页 JPEG（网页端与 App 共用同一份磁盘缓存）。</summary>
         public static byte[] PdfPage(string id, string path, int page, int width, float zoom = 1f)
@@ -247,7 +308,39 @@ namespace AhoChatA.Reader
             }
         }
 
+        /// <summary>常规导入：解析后写入书架。</summary>
         public static ShelfItem Import(string displayName, byte[] bytes, out string error)
+        {
+            return ImportCore(displayName, bytes, true, out error);
+        }
+
+        /// <summary>
+        /// 临时直读：走同一套解析/排版，但绝不写入书架（下载管理器「直接阅读」用）。
+        /// 返回的 ShelfItem 只在本次阅读会话内有效。
+        /// </summary>
+        public static ShelfItem ImportTransient(string displayName, byte[] bytes, out string error)
+        {
+            return ImportCore(displayName, bytes, false, out error);
+        }
+
+        /// <summary>删除临时直读书的缓存与落盘文件（不影响书架）。</summary>
+        public static void DropTransient(string id)
+        {
+            if (string.IsNullOrEmpty(id) || !id.StartsWith("tmp_", StringComparison.Ordinal)) return;
+            lock (_io)
+            {
+                string path;
+                if (_transientPaths.TryGetValue(id, out path))
+                {
+                    try { if (!string.IsNullOrEmpty(path) && File.Exists(path)) File.Delete(path); } catch { }
+                    _transientPaths.Remove(id);
+                }
+                _cache.Remove(id);
+                try { PdfCache.Remove(id); } catch { }
+            }
+        }
+
+        private static ShelfItem ImportCore(string displayName, byte[] bytes, bool persistent, out string error)
         {
             error = null;
             if (bytes == null || bytes.Length == 0) { error = "文件为空"; return null; }
@@ -262,21 +355,25 @@ namespace AhoChatA.Reader
             foreach (var ve in viewerExts) if (rawExt == ve) { isViewerDoc = true; break; }
             if (isViewerDoc)
             {
-                string vid = "local_" + Guid.NewGuid().ToString("N");
+                string vid = (persistent ? "local_" : "tmp_") + Guid.NewGuid().ToString("N");
                 string vdest = Path.Combine(BookDir, vid + "." + rawExt);
                 try
                 {
                     File.WriteAllBytes(vdest, bytes);
+                    if (!persistent) lock (_io) _transientPaths[vid] = vdest;
                     var vitem = new ShelfItem
                     {
                         Id = vid, Name = name, Author = "", Type = "viewer",
                         Format = rawExt, Path = vdest, Added = DateTime.Now, Total = 1
                     };
-                    lock (_io)
+                    if (persistent)
                     {
-                        var list = _store.LoadShelf();
-                        list.Insert(0, vitem);
-                        _store.SaveShelf(list);
+                        lock (_io)
+                        {
+                            var list = _store.LoadShelf();
+                            list.Insert(0, vitem);
+                            _store.SaveShelf(list);
+                        }
                     }
                     error = null;
                     return vitem;
@@ -296,14 +393,15 @@ namespace AhoChatA.Reader
                     error = L10n.T("压缩包内没有找到可阅读的书籍（EPUB / PDF / TXT / FB2 / MD）");
                     return null;
                 }
-                return Import(innerName, inner, out error);
+                return ImportCore(innerName, inner, persistent, out error);
             }
 
-            string id = "local_" + Guid.NewGuid().ToString("N");
+            string id = (persistent ? "local_" : "tmp_") + Guid.NewGuid().ToString("N");
             string ext = BookParser.ExtensionOf(format);
             string dest = Path.Combine(BookDir, id + ext);
             try { File.WriteAllBytes(dest, bytes); }
             catch (Exception ex) { error = L10n.T("写入失败：") + ex.Message; return null; }
+            if (!persistent) lock (_io) _transientPaths[id] = dest;
 
             Action cleanup = () => { try { if (File.Exists(dest)) File.Delete(dest); } catch { } };
             Book book;
@@ -384,9 +482,12 @@ namespace AhoChatA.Reader
 
             lock (_io)
             {
-                var list = _store.LoadShelf();
-                list.Insert(0, item);
-                _store.SaveShelf(list);
+                if (persistent)
+                {
+                    var list = _store.LoadShelf();
+                    list.Insert(0, item);
+                    _store.SaveShelf(list);
+                }
                 _cache[id] = book;
             }
             return item;
@@ -535,10 +636,31 @@ namespace AhoChatA.Reader
             if (ch.Content != null) return ch.Content;
 
             var src = FindSource(item.SourceUrl ?? book.SourceUrl);
-            if (src == null) return "";
-            var text = await Engine.GetContentAsync(src, ch.Url, _store, book.Id ?? item.Id, idx).ConfigureAwait(false);
+            string text = "";
+            if (src != null)
+            {
+                text = await Engine.GetContentAsync(src, ch.Url, _store, book.Id ?? item.Id, idx).ConfigureAwait(false);
+            }
+            // 解析页入库的书（尤其通用解析没有书源规则）走同一套正文抓取逻辑，
+            // 保证「从书架点开就能读」，而不是提示找不到书源。
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                try { text = await NovelAnalyzer.ChapterTextAsync(src, ch).ConfigureAwait(false); }
+                catch (Exception ex) { Android.Util.Log.Warn("ReaderLibrary", "通用正文抓取失败: " + ex.Message); }
+            }
             ch.Content = text;
             return text;
+        }
+
+        /// <summary>把解析出的目录直接落盘，解析页入库的在线书从书架打开时无需再联网取目录。</summary>
+        public static void SaveToc(string id, List<Chapter> chapters)
+        {
+            if (string.IsNullOrEmpty(id) || chapters == null || chapters.Count == 0) return;
+            lock (_io)
+            {
+                try { _store.SaveToc(id, JsonConvert.SerializeObject(chapters)); }
+                catch (Exception ex) { Android.Util.Log.Warn("ReaderLibrary", "目录缓存失败: " + ex.Message); }
+            }
         }
 
         /* ---------------- 进度 ---------------- */

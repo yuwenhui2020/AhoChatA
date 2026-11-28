@@ -170,6 +170,17 @@ namespace AhoChatA.Reader
                     Report(progress, L10n.T("正在按书源规则读取目录…"));
                     var engine = ReaderLibrary.Engine;
                     await engine.GetBookInfoAsync(src, book).ConfigureAwait(false);
+                    // 书源没给封面时，从目录页自己找（og:image / #fmimg / .cover 等）
+                    if (string.IsNullOrEmpty(book.CoverUrl))
+                    {
+                        var infoUrl = string.IsNullOrEmpty(book.BookUrl) ? book.TocUrl : book.BookUrl;
+                        try
+                        {
+                            var infoHtml = await engine.FetchAsync(infoUrl, src.ParseHeader()).ConfigureAwait(false);
+                            book.CoverUrl = CoverFromHtml(infoHtml, infoUrl);
+                        }
+                        catch { }
+                    }
                     var chapters = await engine.GetTocAsync(src, book).ConfigureAwait(false);
                     if (chapters != null && chapters.Count > 0)
                     {
@@ -201,13 +212,15 @@ namespace AhoChatA.Reader
             var chapters2 = ChaptersFromHtml(html, url, out next);
             Android.Util.Log.Info("NovelParse",
                 "通用目录 " + url + " HTML=" + html.Length + "B, 章节=" + chapters2.Count + ", 下一页=" + next);
+            string tocHtml = "";
+            string tocLink = "";
             if (chapters2.Count < MinChapters)
             {
-                var tocLink = FindTocLink(html, url);
+                tocLink = FindTocLink(html, url);
                 if (!string.IsNullOrEmpty(tocLink) && tocLink != url)
                 {
                     Report(progress, L10n.T("检测到详情页，正在打开目录…"));
-                    var tocHtml = await engine2.FetchAsync(tocLink, src == null ? null : src.ParseHeader()).ConfigureAwait(false);
+                    tocHtml = await engine2.FetchAsync(tocLink, src == null ? null : src.ParseHeader()).ConfigureAwait(false);
                     if (!string.IsNullOrWhiteSpace(tocHtml))
                     {
                         var more = ChaptersFromHtml(tocHtml, tocLink, out next);
@@ -225,6 +238,10 @@ namespace AhoChatA.Reader
 
             book.TocUrl = url;
             book.Name = TitleFromHtml(html, url);
+            // 从目录页/详情页自取封面：og:image 优先，其次 #fmimg / .cover 中的真实图片
+            book.CoverUrl = CoverFromHtml(html, url);
+            if (string.IsNullOrEmpty(book.CoverUrl) && !string.IsNullOrEmpty(tocHtml))
+                book.CoverUrl = CoverFromHtml(tocHtml, tocLink);
             result.Book = book;
             result.Source = src;               // 即使目录用通用解析，正文仍可复用书源的 content 规则
             result.Chapters = chapters2;
@@ -390,12 +407,19 @@ namespace AhoChatA.Reader
             }
 
             var title = L10n.T("未命名书籍") + " " + id;
+            var momCover = "";
             try
             {
                 var infoRaw = await ApibiGetAsync("book", "{\"id\":" + id + "}").ConfigureAwait(false);
                 var info = JObject.Parse(infoRaw);
                 var t = info["title"] == null ? "" : info["title"].ToString().Trim();
                 if (t.Length > 0) title = t;
+                var cv = info["cover"] ?? info["pic"] ?? info["img"] ?? info["image"];
+                if (cv != null)
+                {
+                    var cover = CoverUrl(cv.ToString(), new Uri("https://www.biquge.mom/"));
+                    momCover = cover;
+                }
             }
             catch { }
 
@@ -405,6 +429,7 @@ namespace AhoChatA.Reader
                 Name = title,
                 BookUrl = url,
                 TocUrl = url,
+                CoverUrl = momCover,
                 SourceUrl = "https://www.biquge.mom/"
             };
             var chapters = new List<Chapter>();
@@ -818,6 +843,74 @@ namespace AhoChatA.Reader
             }
             catch { }
             return ReaderLibrary.NormalizeName(new Uri(url).Segments.LastOrDefault() ?? L10n.T("未命名书籍"));
+        }
+
+        /// <summary>站点通用占位图 / 图标，不能当书籍封面用。</summary>
+        private static readonly Regex CoverPlaceholderRegex = new Regex(
+            @"nocover|no-cover|noimg|no-img|placeholder|default|loading|blank|transparent|favicon|logo|og\.(png|jpe?g)|share\.(png|jpe?g)|/public/img/",
+            RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+        /// <summary>
+        /// 从目录页 HTML 里找书籍封面：og:image / twitter:image 优先，
+        /// 其次常见笔趣阁结构里的 #fmimg、.cover、.bookcover 图片。
+        /// 懒加载站点的 data-src / data-original 优先于 src。
+        /// </summary>
+        public static string CoverFromHtml(string html, string baseUrl)
+        {
+            if (string.IsNullOrWhiteSpace(html)) return "";
+            try
+            {
+                Uri baseUri;
+                if (!Uri.TryCreate(baseUrl, UriKind.Absolute, out baseUri)) return "";
+                var doc = LoadDoc(html);
+
+                var metas = doc.DocumentNode.SelectNodes("//meta");
+                if (metas != null)
+                {
+                    foreach (var m in metas)
+                    {
+                        var key = (m.GetAttributeValue("property", "") ?? "").ToLowerInvariant();
+                        if (string.IsNullOrEmpty(key)) key = (m.GetAttributeValue("name", "") ?? "").ToLowerInvariant();
+                        if (key != "og:image" && key != "og:image:url" && key != "twitter:image") continue;
+                        var cover = CoverUrl(m.GetAttributeValue("content", ""), baseUri);
+                        if (!string.IsNullOrEmpty(cover)) return cover;
+                    }
+                }
+
+                string[] selectors =
+                {
+                    "#fmimg img", ".cover img", ".bookcover img", ".book-cover img",
+                    "#bookimg img", ".bookimg img", ".pic img", "#sideimg img", "img[src*=bookcover]"
+                };
+                foreach (var selector in selectors)
+                {
+                    foreach (var img in doc.DocumentNode.QuerySelectorAll(selector))
+                    {
+                        var cover = CoverUrl(img.GetAttributeValue("data-original", ""), baseUri);
+                        if (string.IsNullOrEmpty(cover)) cover = CoverUrl(img.GetAttributeValue("data-src", ""), baseUri);
+                        if (string.IsNullOrEmpty(cover)) cover = CoverUrl(img.GetAttributeValue("src", ""), baseUri);
+                        if (!string.IsNullOrEmpty(cover)) return cover;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Android.Util.Log.Warn("NovelParse", "封面提取失败: " + ex.Message);
+            }
+            return "";
+        }
+
+        private static string CoverUrl(string raw, Uri baseUri)
+        {
+            var s = CleanText(raw ?? "");
+            if (s.Length < 6 || s.StartsWith("data:", StringComparison.OrdinalIgnoreCase)) return "";
+            Uri u;
+            if (!Uri.TryCreate(s, UriKind.Absolute, out u) && !Uri.TryCreate(baseUri, s, out u)) return "";
+            if (u.Scheme != Uri.UriSchemeHttp && u.Scheme != Uri.UriSchemeHttps) return "";
+            var path = u.AbsolutePath.ToLowerInvariant();
+            if (path.EndsWith(".svg") || path.EndsWith(".gif") || path.EndsWith(".ico")) return "";
+            if (CoverPlaceholderRegex.IsMatch(u.AbsoluteUri)) return "";
+            return u.AbsoluteUri;
         }
 
         private static string CleanTitle(string s)

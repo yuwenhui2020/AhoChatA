@@ -305,6 +305,7 @@ namespace AhoChatA.Vod
             catch { }
             lock (_lock) _tasks[t.Id] = t;
             SaveHistory();
+            AddDownloadedMediaToLibrary(t.OutputPath);
             return t;
         }
 
@@ -423,7 +424,8 @@ namespace AhoChatA.Vod
                 SetStatus(t, "done");
                 ShowDownloadNotification(t, 100, L10n.T("下载完成"));
 
-                // 触发媒体库扫描（不等待：扫描失败不影响本条已落盘的下载）
+                // 视频自动进入本程序影音模块（图片/音乐/视频统一入口）
+                AddDownloadedMediaToLibrary(outMp4);
                 try { _ = MusicLibrary.ScanAsync(); } catch { }
             }
             catch (Exception ex) { Fail(t, ex.Message); ShowDownloadNotification(t, -1, L10n.T("下载失败: ") + ex.Message); }
@@ -445,6 +447,8 @@ namespace AhoChatA.Vod
                 t.OutputPath = path;
                 t.Progress = 100;
                 SetStatus(t, "done");
+                // 音乐自动进入本程序曲库
+                AddDownloadedMediaToLibrary(path);
             }
             catch (Exception ex) { Fail(t, ex.Message); }
         }
@@ -1004,17 +1008,65 @@ namespace AhoChatA.Vod
 
                 if (progress >= 100 && !string.IsNullOrEmpty(t.OutputPath) && File.Exists(t.OutputPath))
                 {
+                    Intent clickIntent;
+                    if (global::AhoChatA.DownloadActivity.IsReadingFormat(t.OutputPath))
+                    {
+                        // 阅读格式：通知点击也进「阅读」模块直接阅读，不加入书架
+                        clickIntent = new Intent(ctx, typeof(global::AhoChatA.ReaderActivity));
+                        clickIntent.PutExtra(global::AhoChatA.ReaderActivity.ExtraBook, t.OutputPath);
+                        clickIntent.PutExtra(global::AhoChatA.ReaderActivity.ExtraBookName, IoPath.GetFileNameWithoutExtension(t.OutputPath));
+                        clickIntent.PutExtra(global::AhoChatA.ReaderActivity.ExtraDirectRead, true);
+                        clickIntent.AddFlags(ActivityFlags.NewTask | ActivityFlags.SingleTop);
+                    }
+                    else
+                    {
+                        clickIntent = new Intent(Intent.ActionView)
+                            .SetDataAndType(FileProvider.GetUriForFile(ctx, "com.Ahochat.android.fileprovider", new Java.IO.File(t.OutputPath)), GetMimeType(t.OutputPath))
+                            .AddFlags(ActivityFlags.NewTask | ActivityFlags.GrantReadUriPermission);
+                    }
                     builder.SetContentText(L10n.T("下载完成，点击打开"))
-                           .SetContentIntent(PendingIntent.GetActivity(ctx, t.Id.GetHashCode(),
-                               new Intent(Intent.ActionView)
-                                   .SetDataAndType(FileProvider.GetUriForFile(ctx, "com.Ahochat.android.fileprovider", new Java.IO.File(t.OutputPath)), GetMimeType(t.OutputPath))
-                                   .AddFlags(ActivityFlags.NewTask | ActivityFlags.GrantReadUriPermission),
+                           .SetContentIntent(PendingIntent.GetActivity(ctx, t.Id.GetHashCode(), clickIntent,
                                PendingIntentFlags.Immutable | PendingIntentFlags.UpdateCurrent));
                 }
 
                 mgr.Notify(t.Id.GetHashCode(), builder.Build());
             }
             catch { }
+        }
+
+        /// <summary>
+        /// 下载完成的图片 / 视频 / 音乐自动进入本程序媒体库。
+        /// 先把所在目录登记进音乐库扫描范围（老配置缺开关时补齐），再触发一次全库扫描；
+        /// 图片与音乐/视频共用 MusicLibrary.ScanAsync，扫描结果会同步写入 PhotoLibrary。
+        /// </summary>
+        public static void AddDownloadedMediaToLibrary(string path)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(path) || !File.Exists(path)) return;
+                var ext = IoPath.GetExtension(path).ToLowerInvariant();
+                bool audio = ".mp3 .m4a .flac .wav .ogg .aac .opus .ape .wma".Split(' ').Contains(ext);
+                bool video = ".mp4 .mkv .mov .webm .avi .flv .m4v .ts".Split(' ').Contains(ext);
+                bool photo = ".jpg .jpeg .png .webp .gif .bmp .heic".Split(' ').Contains(ext);
+                if (!audio && !video && !photo) return;
+
+                var dir = IoPath.GetDirectoryName(path);
+                if (!string.IsNullOrEmpty(dir))
+                {
+                    try { MusicLibrary.EnsureLoaded(AppContext ?? global::Android.App.Application.Context); } catch { }
+                    try { MusicLibrary.AddDir(dir, audio, video, photo); } catch { }
+                }
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await MusicLibrary.ScanAsync().ConfigureAwait(false);
+                        Android.Util.Log.Info("DownloadCenter", "媒体库已自动更新: " + IoPath.GetFileName(path));
+                    }
+                    catch (Exception ex) { Android.Util.Log.Warn("DownloadCenter", "媒体库更新失败: " + ex.Message); }
+                });
+            }
+            catch (Exception ex) { Android.Util.Log.Warn("DownloadCenter", "媒体入库失败: " + ex.Message); }
         }
 
         private static string GetMimeType(string path)

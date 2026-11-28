@@ -323,7 +323,7 @@ namespace AhoChatA.Music
             }
 
             AddRuntimeDir("Mchat 下载（音乐）", OnlineMusic.DownloadDir(), true, false, false, ref _musicDownloadDir);
-            AddRuntimeDir("Mchat 下载（影音）", AhoChatA.Vod.DownloadCenter.HttpDownloadsDir(), true, true, false, ref _httpDownloadDir);
+            AddRuntimeDir("Mchat 下载（影音）", AhoChatA.Vod.DownloadCenter.HttpDownloadsDir(), true, true, true, ref _httpDownloadDir);
         }
 
         private static void AddRuntimeDir(string label, string path, bool audio, bool video, bool photo, ref string cache)
@@ -332,7 +332,14 @@ namespace AhoChatA.Music
             {
                 if (string.IsNullOrEmpty(path)) return;
                 cache = path;
-                if (_cfg.Dirs.Any(d => string.Equals(d.Path, path, StringComparison.OrdinalIgnoreCase))) return;
+                var old = _cfg.Dirs.FirstOrDefault(d => string.Equals(d.Path, path, StringComparison.OrdinalIgnoreCase));
+                if (old != null)
+                {
+                    // 老配置里下载目录可能少勾了图片/视频：补齐开关，保证下载完成即能在本程序媒体库看到
+                    old.ForAudio |= audio; old.ForVideo |= video; old.ForPhoto |= photo;
+                    if (!old.Enabled) old.Enabled = true;
+                    return;
+                }
                 _cfg.Dirs.Add(new MusicDir
                 {
                     Path = path, Label = L10n.T(label), BuiltIn = true,
@@ -386,7 +393,16 @@ namespace AhoChatA.Music
         {
             if (string.IsNullOrWhiteSpace(dir)) return;
             dir = dir.Trim().TrimEnd('/');
-            if (dirsContain(dir)) return;
+            var existing = _cfg.Dirs.FirstOrDefault(d => string.Equals(d.Path, dir, StringComparison.OrdinalIgnoreCase));
+            if (existing != null)
+            {
+                // 新下载的文件类型可能需要原先没启用的开关（例如下载目录先有 mp3、后来又有 jpg）
+                existing.ForAudio |= forAudio; existing.ForVideo |= forVideo; existing.ForPhoto |= forPhoto;
+                if (!existing.Enabled) existing.Enabled = true;
+                Dirty = true;
+                SaveDirs();
+                return;
+            }
             if (!forAudio && !forVideo && !forPhoto) forAudio = true;   // 防止全关成L10n.T("空目录")
             _cfg.Dirs.Add(new MusicDir
             {
@@ -538,6 +554,9 @@ namespace AhoChatA.Music
         private static bool AcceptAudio(Song s, long size)
         {
             if (!_cfg.FilterShortAudio) return true;
+            // 用户主动下载的音频即使很短也要进曲库，不能被「提示音过滤」误杀
+            var p = (s.Path ?? "").Replace('\\', '/');
+            if (IsUnder(p, _musicDownloadDir) || IsUnder(p, _httpDownloadDir)) return true;
             if (size < 100 * 1024) return false;
             if (s.DurationMs > 0 && s.DurationMs < _cfg.MinAudioSeconds * 1000) return false;
             return true;

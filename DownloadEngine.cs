@@ -257,8 +257,9 @@ namespace AhoChatA.Vod
                 UpdateProgress(state, 100);
                 UpdateStatus(state, "done");
 
-                // 8. 媒体库扫描
+                // 8. 媒体库扫描（系统扫描 + 本程序音乐/视频/图片库自动入库）
                 MediaScanner.ScanFile(_ctx, state.OutputPath, GetMimeType(state.OutputPath));
+                DownloadCenter.AddDownloadedMediaToLibrary(state.OutputPath);
 
                 // 9. 完成动作：自动打开、自动解压
                 if (AutoOpenOnComplete || ExtractArchivesOnComplete)
@@ -272,12 +273,20 @@ namespace AhoChatA.Vod
                                 await Task.Delay(500); // 等待文件系统稳定
                                 if (File.Exists(state.OutputPath))
                                 {
-                                    var intent = new Intent(Intent.ActionView);
-                                    var mime = GetMimeType(state.OutputPath);
-                                    var uri = AndroidX.Core.Content.FileProvider.GetUriForFile(_ctx, "com.Ahochat.android.fileprovider", new Java.IO.File(state.OutputPath));
-                                    intent.SetDataAndType(uri, mime);
-                                    intent.AddFlags(ActivityFlags.GrantReadUriPermission | ActivityFlags.NewTask);
-                                    _ctx.StartActivity(intent);
+                                    if (global::AhoChatA.DownloadActivity.IsReadingFormat(state.OutputPath))
+                                    {
+                                        // 阅读格式统一走「阅读」模块直读（不入书架），不再 ACTION_VIEW
+                                        global::AhoChatA.DownloadActivity.OpenDirectRead(_ctx, state.OutputPath);
+                                    }
+                                    else
+                                    {
+                                        var intent = new Intent(Intent.ActionView);
+                                        var mime = GetMimeType(state.OutputPath);
+                                        var uri = AndroidX.Core.Content.FileProvider.GetUriForFile(_ctx, "com.Ahochat.android.fileprovider", new Java.IO.File(state.OutputPath));
+                                        intent.SetDataAndType(uri, mime);
+                                        intent.AddFlags(ActivityFlags.GrantReadUriPermission | ActivityFlags.NewTask);
+                                        _ctx.StartActivity(intent);
+                                    }
                                 }
                             }
                             if (ExtractArchivesOnComplete && IsArchive(state.OutputPath))

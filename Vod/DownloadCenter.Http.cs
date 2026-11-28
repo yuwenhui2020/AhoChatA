@@ -96,6 +96,8 @@ namespace AhoChatA.Vod
                         }, context.Cancellation.Token).ConfigureAwait(false);
                     }
                     task.Progress = 100; task.Status = "done"; ShowDownloadNotification(task, 100, L10n.T("下载完成"));
+                    // 直链下载的图片 / 视频 / 音乐自动进入本程序媒体库
+                    AddDownloadedMediaToLibrary(task.OutputPath);
                 }
                 catch (OperationCanceledException) { task.Status = "canceled"; task.Error = L10n.T("下载已取消；可重试重新下载"); ShowDownloadNotification(task, 100, L10n.T("已取消")); }
                 catch (Exception ex) { Fail(task, ex.Message); ShowDownloadNotification(task, 100, L10n.T("下载失败: ") + ex.Message); }
